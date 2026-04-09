@@ -208,6 +208,11 @@ void upd765_family_device::set_ready_line_connected(bool _ready)
 	ready_connected = _ready;
 }
 
+void upd765_family_device::set_ready_polled(bool _polled)
+{
+	ready_polled = _polled;
+}
+
 void upd765_family_device::set_select_lines_connected(bool _select)
 {
 	select_connected = _select;
@@ -1658,6 +1663,7 @@ void ps2_fdc_device::execute_command(int cmd)
 void upd765_family_device::command_end(floppy_info &fi, bool data_completion)
 {
 	LOGDONE("command done (%s) - %s\n", data_completion ? "data" : "seek", results());
+	logerror("FDC command_end: drive=%d data=%d irq->true cur_irq_before=%d\n", fi.id, data_completion, cur_irq);
 	fi.main_state = fi.sub_state = IDLE;
 	irq = true;
 	if(!data_completion) {
@@ -2600,6 +2606,7 @@ void upd765_family_device::check_irq()
 	cur_irq = cur_irq && (dor & 4) && (mode != mode_t::AT || (dor & 8));
 	if(cur_irq != old_irq) {
 		LOGTCIRQ("irq = %d\n", cur_irq);
+		logerror("FDC check_irq: cur_irq=%d (irq=%d internal_drq=%d dor=0x%02x mode=%d)\n", cur_irq, irq, internal_drq, dor, (int)mode);
 		intrq_cb(cur_irq);
 	}
 }

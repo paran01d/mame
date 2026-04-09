@@ -262,7 +262,12 @@ void base_sns_cart_slot_device::device_start()
 {
 	m_cart = dynamic_cast<device_sns_cart_interface *>(get_card_device());
 	if (m_cart != nullptr)
+	{
 		m_cart->m_slot = this;
+		// Copier/backup devices with onboard firmware don't need a cart image loaded
+		if (m_cart->has_internal_bios())
+			set_must_be_loaded(false);
+	}
 }
 
 

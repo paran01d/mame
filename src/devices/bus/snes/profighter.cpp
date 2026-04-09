@@ -1,48 +1,59 @@
 // license:BSD-3-Clause
 // copyright-holders:
 
-/***********************************************************************************************************
+/*
+Super Pro Fighter Q / QA / QB / X SNES copier devices
 
- Super Pro Fighter Q (3 variants)
- Super Pro Fighter X (MB03D)
+These devices sit between the SNES and a game cartridge, providing:
+- Floppy disk interface (FDC) for loading/saving game images
+- DRAM for storing game images loaded from disk
+- IC card slot for inserting game cartridges
+- Cart passthrough for direct play or cart-to-disk copying
 
- TODO: everything
+Memory map (QB, System Mode 0 / BIOS mode):
+  $8000-$9FFF: DRAM page window (8KB, page selected by $E000-$E003)
+  $A000-$BFFF: Cart/SRAM page window (when enabled via $7000)
+  $C000-$DFFF: Reserved / I/O
+  $E000-$E00F: Hardware registers (PAL-decoded)
+  $E000-$FFFF: Firmware ROM (bank 0)
 
- ***********************************************************************************************************/
+Hardware registers ($E000-$E00F):
+  $E000-$E003 W: DRAM/cart page select (8KB page number)
+  $E005 W:       System mode 1 — cart passthrough latch (survives reset)
+  $E006 W:       System mode 2 — DRAM cartridge emulation (via $E00D)
+  $E00D W:       DRAM mode latch (bit 0, survives reset)
 
+Page register + bank addressing:
+  DRAM write window ($8000-$9FFF):
+    offset = bank * 32KB + page * 8KB + (addr - $8000)
+  Cart read window ($A000-$BFFF):
+    offset = bank * 32KB + (page & 3) * 8KB + (addr - $A000)
+*/
 
 #include "emu.h"
 #include "profighter.h"
 
-#include "snes_carts.h"
-
+#include "bus/snes/snes_carts.h"
 #include "imagedev/floppy.h"
 #include "machine/upd765.h"
 
 
-DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_Q, sns_pro_fighter_q_device, "profighterq", "Super Pro. Fighter Q (variant 1)");
-DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_QA, sns_pro_fighter_qa_device, "profighterqa", "Super Pro. Fighter Q (variant 2)");
-DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_QB, sns_pro_fighter_qb_device, "profighterqb", "Super Pro. Fighter Q (variant 3)");
-DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_X, sns_pro_fighter_x_device, "profighterx", "Pro Fighter X (MB03D)");
+namespace {
 
-
-static void profght_floppies(device_slot_interface &device)
+void profght_floppies(device_slot_interface &device)
 {
+	device.option_add("35hd", FLOPPY_35_HD);
 	device.option_add("35dd", FLOPPY_35_DD);
 }
 
+} // anonymous namespace
 
-/*
-Super Pro. Fighter Q copier (variant 1)
 
-Main components:
+//===========================================================================
+//  Pro Fighter Q (variant 1)
+//===========================================================================
 
-MCCS3201FN floppy disk controller
-24 MHz XTAL (for the FDC)
-ST10198P CIC replacement
-HM6264LP-15 standard SRAM
-MCM60L256AF10 standard SRAM
-*/
+DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_Q, sns_pro_fighter_q_device, "profighterq", "Super Pro. Fighter Q (variant 1)")
 
 sns_pro_fighter_q_device::sns_pro_fighter_q_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: device_t(mconfig, SNS_PRO_FIGHTER_Q, tag, owner, clock)
@@ -50,30 +61,21 @@ sns_pro_fighter_q_device::sns_pro_fighter_q_device(const machine_config &mconfig
 {
 }
 
-ROM_START( profghtq )
-	ROM_REGION( 0x4000, "program", 0 )
-	ROM_LOAD( "u9", 0x0000, 0x4000, CRC(4f27e1fe) SHA1(ee11ac36b5e51476ab92c66135a2353e038c014b) )
-
-	ROM_REGION( 0x1200, "plds", ROMREGION_ERASE00 )
-	ROM_LOAD( "palce16v8h.u1",  0x0000, 0x0117, CRC(3191765b) SHA1(3042c29cad1c6eebfa756514939da973b5856bd2) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce20v8h.u5",  0x0200, 0x0157, CRC(5fa3c6bf) SHA1(edb825a15256a3a0c2fefdb3d8bf2482fd630744) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce16v8h.u6",  0x0400, 0x0117, CRC(f9a94549) SHA1(48eab926a13d4015e91833ea4b2e3da8a461392e) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce20v8h.u7",  0x0600, 0x0157, CRC(b321697d) SHA1(902459c06e1e35b3ad052f9439fd54add6ad2e5b) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce16v8h.u12", 0x0800, 0x0117, CRC(40f86bce) SHA1(97edea87fc3bcfa296202fc106b1838ceffb1730) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce16v8h.u13", 0x0a00, 0x0117, CRC(691d8a86) SHA1(f61a93cd661035440461076ee42ec7bee98ce8ff) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "ami18cv8b.u14",  0x0c00, 0x0155, CRC(472405e4) SHA1(615196f1ab9819b2e22f5f48d5edd35d4db70098) ) // this is actually a recreation targeted for a PEEL18CV8 device
-	ROM_LOAD( "palce16v8h.u15", 0x0e00, 0x0117, CRC(0b8a2c8f) SHA1(0cc9c9ed671f85a3ad8622b65f94b546bb13e6b6) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce16v8h.u16", 0x1000, 0x0117, CRC(70346ef5) SHA1(d9c0a7a2c466fa1fcc1680ee5dc3777714c05fe5) ) // this is actually a recreation targeted for a GAL16V8 device
-ROM_END
-
-
 void sns_pro_fighter_q_device::device_start()
 {
 }
 
 void sns_pro_fighter_q_device::device_reset()
 {
+}
 
+ROM_START( profghtq )
+	ROM_REGION( 0x4000, "program", 0 )
+	ROM_LOAD( "u7", 0x0000, 0x4000, CRC(55e3ea49) SHA1(e98f03a97d3bfbba29afc1ffe9bdbf7a79bf3a6e) )
+ROM_END
+
+void sns_pro_fighter_q_device::device_add_mconfig(machine_config &config)
+{
 }
 
 const tiny_rom_entry *sns_pro_fighter_q_device::device_rom_region() const
@@ -81,27 +83,12 @@ const tiny_rom_entry *sns_pro_fighter_q_device::device_rom_region() const
 	return ROM_NAME( profghtq );
 }
 
-void sns_pro_fighter_q_device::device_add_mconfig(machine_config &config)
-{
-	N82077AA(config, "fdc", 24_MHz_XTAL); // actually MCCS3201FN, divider?
-	FLOPPY_CONNECTOR(config, "fdc:0", profght_floppies, "35dd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
 
-	SNS_CART_SLOT(config, "cartslot", 0, snes_cart, nullptr);
-}
+//===========================================================================
+//  Pro Fighter QA (variant 2)
+//===========================================================================
 
-
-/*
-Super Pro. Fighter Q copier (variant 2)
-
-Main components:
-
-GM82C765B floppy disk controller
-16 MHz XTAL (for the FDC)
-74LS216 CIC replacement (not to be confused with the TTL)
-MK4864N-120 standard SRAM
-M5M5256FP CMOS Static RAM
-6 x HY524800J-80 Fast Page DRAM (on a sub board)
-*/
+DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_QA, sns_pro_fighter_qa_device, "profighterqa", "Super Pro. Fighter Q (variant 2)")
 
 sns_pro_fighter_qa_device::sns_pro_fighter_qa_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: device_t(mconfig, SNS_PRO_FIGHTER_QA, tag, owner, clock)
@@ -109,31 +96,21 @@ sns_pro_fighter_qa_device::sns_pro_fighter_qa_device(const machine_config &mconf
 {
 }
 
-ROM_START( profghtqa )
-	ROM_REGION( 0x8000, "program", 0 )
-	ROM_LOAD( "u10", 0x0000, 0x8000, CRC(56132c4e) SHA1(6649b1f13a96d144907ebab65ce00ac168b0dbe5) )
-
-	ROM_REGION( 0x1400, "plds", ROMREGION_ERASE00 )
-	ROM_LOAD( "ami18cv8b.u2",   0x0000, 0x0155, CRC(4ee0c889) SHA1(a5d060c8892dd24cbc1c14bc937ad5c301831dea) ) // this is actually a recreation targeted for a PEEL18CV8 device
-	ROM_LOAD( "palce16v8h.u3",  0x0200, 0x0117, CRC(17e897b9) SHA1(e4e9806187ffb51d4363ef9fd34d5b4a3e62e1d3) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce20v8h.u4",  0x0400, 0x0157, CRC(5fa3c6bf) SHA1(edb825a15256a3a0c2fefdb3d8bf2482fd630744) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce20v8h.u8",  0x0600, 0x0157, CRC(a9f5c9ed) SHA1(395f523b77d9d9ed4f20c124153697c7b301cfcc) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce16v8h.u13", 0x0800, 0x0117, CRC(c77839b0) SHA1(6370c3862caee28dd9cc543c42c1ee9e87bdd64d) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce16v8h.u14", 0x0a00, 0x0117, CRC(12c79d25) SHA1(9796270dd2897803686638bbd87aca1364e41933) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce16v8h.u15", 0x0c00, 0x0117, CRC(0b8a2c8f) SHA1(0cc9c9ed671f85a3ad8622b65f94b546bb13e6b6) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "ami18cv8b.u16",  0x0e00, 0x0155, CRC(481a6974) SHA1(aff914837a7d8ef804b0ac4049d6f23ab23a1cda) ) // this is actually a recreation targeted for a PEEL18CV8 device
-	ROM_LOAD( "palce16v8h.u17", 0x1000, 0x0117, CRC(70346ef5) SHA1(d9c0a7a2c466fa1fcc1680ee5dc3777714c05fe5) ) // this is actually a recreation targeted for a GAL16V8 device
-	ROM_LOAD( "palce16v8h.u18", 0x1200, 0x0117, CRC(a3bbb6b1) SHA1(bdf291d2e3601d7b48c348b1d99b8872b1b4fedd) ) // this is actually a recreation targeted for a GAL16V8 device
-ROM_END
-
-
 void sns_pro_fighter_qa_device::device_start()
 {
 }
 
 void sns_pro_fighter_qa_device::device_reset()
 {
+}
 
+ROM_START( profghtqa )
+	ROM_REGION( 0x8000, "program", 0 )
+	ROM_LOAD( "u7", 0x0000, 0x8000, CRC(6cf83a73) SHA1(bf2e28b5eb1717e9987ef49e647cf3dbd4f7a3ea) )
+ROM_END
+
+void sns_pro_fighter_qa_device::device_add_mconfig(machine_config &config)
+{
 }
 
 const tiny_rom_entry *sns_pro_fighter_qa_device::device_rom_region() const
@@ -141,38 +118,28 @@ const tiny_rom_entry *sns_pro_fighter_qa_device::device_rom_region() const
 	return ROM_NAME( profghtqa );
 }
 
-void sns_pro_fighter_qa_device::device_add_mconfig(machine_config &config)
-{
-	WD37C65C(config, "fdc", 16_MHz_XTAL); // actually GM82C765B
-	FLOPPY_CONNECTOR(config, "fdc:0", profght_floppies, "35dd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
 
-	SNS_CART_SLOT(config, "cartslot", 0, snes_cart, nullptr);
-}
+//===========================================================================
+//  Pro Fighter QB (variant 3)
+//===========================================================================
 
-
-/*
-Super Pro. Fighter Q copier (variant 3)
-
-Main components:
-
-ACCMicro 3201 floppy disk controller
-24 MHz XTAL (for the FDC)
-unmarked CIC replacement
-D43256AGU-15LL CMOS Static RAM
-4 x GM71C4400BJ70 + 4 x KM44C1000BLJ-6 Fast Page DRAM (on a sub board)
-*/
+DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_QB, sns_pro_fighter_qb_device, "profighterqb", "Super Pro. Fighter Q (variant 3)")
 
 sns_pro_fighter_qb_device::sns_pro_fighter_qb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: device_t(mconfig, SNS_PRO_FIGHTER_QB, tag, owner, clock)
 	, device_sns_cart_interface(mconfig, *this)
+	, m_program_rom(*this, "program")
+	, m_fdc(*this, "fdc")
+	, m_iccard(*this, "cartslot")
+	, m_dram_mode(false)
 {
 }
 
-ROM_START( profghtqb ) // same program as profghtrq but different plds
+ROM_START( profghtqb )
 	ROM_REGION( 0x4000, "program", 0 )
-	ROM_LOAD( "u7", 0x0000, 0x4000, CRC(4f27e1fe) SHA1(ee11ac36b5e51476ab92c66135a2353e038c014b) )
+	ROM_LOAD( "u7", 0x0000, 0x4000, CRC(4f27e1fe) SHA1(02ccb359c39d50c7e22deeb8f5e3cbef47029e02) )
 
-	ROM_REGION( 0xe00, "plds", ROMREGION_ERASE00 ) // probably all recreations, but chip types match
+	ROM_REGION( 0xe00, "pals", ROMREGION_ERASE00 )
 	ROM_LOAD( "peel18cv8p.u2",  0x000, 0x155, CRC(e40bc5c0) SHA1(207437a41ae04bf4d5093775a6f2e602d0840d12) )
 	ROM_LOAD( "peel18cv8p.u4",  0x200, 0x155, CRC(bd152ad4) SHA1(bc79994d63efa7ef6e3cea4bd6f7940b68c40176) )
 	ROM_LOAD( "peel18cv8p.u5",  0x400, 0x155, CRC(b03c21a0) SHA1(dde7644cca7b383ab19e3598f30250a6695816fd) )
@@ -185,11 +152,31 @@ ROM_END
 
 void sns_pro_fighter_qb_device::device_start()
 {
+	// nvram layout:
+	//   [0x000000-0x007FFF] 32KB  D43256AGU-15LL static RAM (work RAM)
+	//   [0x008000]          1B    control register (DRAM mode switch)
+	//   [0x008010-0x008011] 2B    FDC status/data stubs
+	//   [0x010000-0x40FFFF] 4MB   DRAM (4x GM71C4400BJ70 + 4x KM44C1000BLJ-6)
+	nvram_alloc(0x410000);
+	m_dram_mode = false;
+	m_cart_passthrough = false;
+	m_cart_enable = false;
+	m_dma_addr = 0;
+	m_dram_page = 0;
+	m_dram_write_log = 0;
+	save_item(NAME(m_dram_mode));
+	save_item(NAME(m_cart_passthrough));
+	save_item(NAME(m_cart_enable));
+	save_item(NAME(m_dram_page));
 }
 
 void sns_pro_fighter_qb_device::device_reset()
 {
-
+	// m_dram_mode and m_cart_passthrough are intentionally NOT reset here.
+	// These are hardware latches that persist across SNES soft reset.
+	m_dma_addr = 0;
+	m_dram_page = 0;
+	m_cart_enable = false;
 }
 
 const tiny_rom_entry *sns_pro_fighter_qb_device::device_rom_region() const
@@ -197,10 +184,273 @@ const tiny_rom_entry *sns_pro_fighter_qb_device::device_rom_region() const
 	return ROM_NAME( profghtqb );
 }
 
+// nvram offsets for I/O registers (see device_start for layout)
+static constexpr uint32_t QB_CTRL_REG   = 0x008000;
+static constexpr uint32_t QB_FDC_BASE   = 0x008010;
+static constexpr uint32_t QB_DRAM_START = 0x010000;  // first byte of DRAM in nvram
+
+uint8_t sns_pro_fighter_qb_device::read_h(offs_t offset)
+{
+	// Cart passthrough mode ($E005 latch): IC card cartridge provides ROM directly
+	if (m_cart_passthrough && m_iccard->exists())
+	{
+		const uint8_t bank = (offset >> 16) & 0x3f;
+		const uint32_t cart_offset = (uint32_t(bank) * 0x8000) + ((offset & 0xffff) - 0x8000);
+		if (m_iccard->m_cart->get_rom_size() > 0)
+			return m_iccard->m_cart->get_rom_base()[cart_offset % m_iccard->m_cart->get_rom_size()];
+		return 0xff;
+	}
+
+	// DRAM mode ($E00D latch): game runs from DRAM
+	if (m_dram_mode)
+	{
+		if (m_nvram.empty()) return 0xff;
+		const uint8_t bank = (offset >> 16) & 0x3f;
+		const uint32_t dram_addr = QB_DRAM_START + (uint32_t(bank) * 0x8000) + ((offset & 0xffff) - 0x8000);
+		return (dram_addr < m_nvram.size()) ? m_nvram[dram_addr] : 0xff;
+	}
+
+	// Boot mode: $A000-$BFFF is cart page window when cart is enabled
+	{
+		const uint16_t addr = offset & 0xffff;
+		const uint8_t bk = (offset >> 16) & 0x3f;
+		if (addr >= 0xa000 && addr < 0xc000 && m_cart_enable && m_iccard->exists())
+		{
+			const uint32_t cart_offset = (uint32_t(bk) * 0x8000)
+				+ (uint32_t(m_dram_page & 0x03) * 0x2000)
+				+ (addr - 0xa000);
+			if (cart_offset < m_iccard->m_cart->get_rom_size())
+				return m_iccard->m_cart->get_rom_base()[cart_offset];
+			return 0xff;
+		}
+	}
+
+	// Boot mode default: firmware ROM at $C000-$FFFF
+	return m_program_rom->base()[offset & (m_program_rom->bytes() - 1) & 0x3fff];
+}
+
+uint8_t sns_pro_fighter_qb_device::read_l(offs_t offset)
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t  bank = (offset >> 16) & 0xff;
+
+	// Cart passthrough mode: IC card provides all ROM reads
+	if (m_cart_passthrough && m_iccard->exists())
+		return read_h(offset);
+
+	// $8000-$BFFF region
+	if (addr < 0xc000)
+	{
+		// $A000-$BFFF: cart page window when enabled
+		if (addr >= 0xa000 && m_cart_enable && m_iccard->exists())
+		{
+			const uint32_t cart_offset = (uint32_t(bank) * 0x8000)
+				+ (uint32_t(m_dram_page & 0x03) * 0x2000)
+				+ (addr - 0xa000);
+			if (cart_offset < m_iccard->m_cart->get_rom_size())
+				return m_iccard->m_cart->get_rom_base()[cart_offset];
+			return 0xff;
+		}
+
+		// $8000-$9FFF: DRAM
+		if (m_nvram.empty()) return 0xff;
+		const uint32_t dram_addr = QB_DRAM_START + (uint32_t(bank) * 0x8000) + (addr - 0x8000);
+		if (dram_addr < m_nvram.size()) return m_nvram[dram_addr];
+		return 0xff;
+	}
+
+	// Banks $40-$6F: $C000-$FFFF is also DRAM (no firmware ROM here)
+	if (bank >= 0x40 && bank < 0x70)
+	{
+		if (m_nvram.empty()) return 0xff;
+		const uint32_t dram_addr = QB_DRAM_START + (uint32_t(bank) * 0x8000) + (addr - 0x8000);
+		if (dram_addr < m_nvram.size()) return m_nvram[dram_addr];
+		return 0xff;
+	}
+
+	// Banks $00-$3F, addr $C000-$FFFF: firmware ROM in boot mode, DRAM in game mode
+	return read_h(offset);
+}
+
+uint8_t sns_pro_fighter_qb_device::read_ram(offs_t offset)
+{
+	if (offset == QB_FDC_BASE)
+		return m_fdc->msr_r();
+	if (offset == QB_FDC_BASE + 1)
+		return m_fdc->fifo_r();
+
+	if (!m_nvram.empty() && offset < m_nvram.size())
+		return m_nvram[offset];
+	return 0xff;
+}
+
+void sns_pro_fighter_qb_device::write_ram(offs_t offset, uint8_t data)
+{
+	if (offset == QB_CTRL_REG)
+	{
+		m_dram_mode = BIT(data, 0);
+		return;
+	}
+	if (offset == QB_FDC_BASE)
+	{
+		m_fdc->dsr_w(data);
+		return;
+	}
+	if (offset == QB_FDC_BASE + 1)
+	{
+		m_fdc->fifo_w(data);
+		return;
+	}
+
+	if (!m_nvram.empty() && offset < m_nvram.size())
+		m_nvram[offset] = data;
+}
+
+uint8_t sns_pro_fighter_qb_device::chip_read(offs_t offset)
+{
+	const uint16_t addr = offset & 0xffff;
+
+	// FDC registers at $2800-$28FF (offset is relative: 0x00-0xFF)
+	if (addr <= 0xff)
+	{
+		switch (addr & 7)
+		{
+			case 0: return m_fdc->sra_r();
+			case 1: return m_fdc->srb_r();
+			case 2: return m_fdc->dor_r();
+			case 3: return m_fdc->tdr_r();
+			case 4: return m_fdc->msr_r();
+			case 5: return m_fdc->fifo_r();
+			case 7: return m_fdc->dir_r();
+			default: return 0xff;
+		}
+	}
+
+	// $6000-$7FFF: IC card slot (open bus when no cart inserted)
+	return 0xff;
+}
+
+void sns_pro_fighter_qb_device::chip_write(offs_t offset, uint8_t data)
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t bank = (offset >> 16) & 0xff;
+
+	// FDC registers at $2800-$28FF (offset is relative: 0x00-0xFF)
+	if (addr <= 0xff)
+	{
+		switch (addr & 7)
+		{
+			case 2: m_fdc->dor_w(data); return;
+			case 3: m_fdc->tdr_w(data); return;
+			case 4: m_fdc->dsr_w(data); return;
+			case 5: m_fdc->fifo_w(data); return;
+			case 7: m_fdc->ccr_w(data); return;
+		}
+		return;
+	}
+
+	// $6000-$7FFF: IC card slot / QB control area
+	if (addr >= 0x6000 && addr < 0x8000)
+	{
+		if (addr == 0x7000)
+			m_cart_enable = (data == 0x55);
+		return;
+	}
+
+	// $A000-$BFFF: cart SRAM passthrough when cart is enabled
+	if (addr >= 0xa000 && addr < 0xc000 && m_cart_enable && m_iccard->exists())
+	{
+		if (m_iccard->m_cart->get_nvram_size() > 0)
+		{
+			const uint32_t sram_offset = (uint32_t(bank) * 0x8000)
+				+ (uint32_t(m_dram_page & 0x03) * 0x2000)
+				+ (addr - 0xa000);
+			m_iccard->write_ram(sram_offset, data);
+		}
+		return;
+	}
+
+	// $8000-$FFFF: hardware registers and DRAM
+	if (addr >= 0x8000)
+	{
+		// $E000-$E00F: PAL-decoded hardware registers
+		if (addr >= 0xe000 && addr <= 0xe00f)
+		{
+			if (addr >= 0xe000 && addr <= 0xe003)
+			{
+				// Page register: selects 8KB page for DRAM/cart windows
+				m_dram_page = data;
+			}
+			else if (addr == 0xe005 && !m_cart_passthrough)
+			{
+				// Cart passthrough latch (survives reset)
+				m_cart_passthrough = BIT(data, 7);
+				if (m_cart_passthrough)
+					machine().schedule_soft_reset();
+			}
+			else if (addr == 0xe00d && !m_dram_mode)
+			{
+				// DRAM mode latch (survives reset)
+				m_dram_mode = BIT(data, 0);
+				if (m_dram_mode)
+					machine().schedule_soft_reset();
+			}
+			return;
+		}
+
+		// $8000-$9FFF: DRAM page window write
+		if (!m_nvram.empty())
+		{
+			uint32_t dram_addr;
+			if (addr < 0xa000)
+			{
+				// Page window: bank * 32KB + page * 8KB + offset
+				dram_addr = QB_DRAM_START + (uint32_t(bank) * 0x8000) + (uint32_t(m_dram_page) * 0x2000) + (addr - 0x8000);
+			}
+			else
+			{
+				// Outside page window: bank-based linear mapping
+				dram_addr = QB_DRAM_START + (uint32_t(bank) * 0x8000) + (addr - 0x8000);
+			}
+			if (dram_addr < m_nvram.size())
+				m_nvram[dram_addr] = data;
+		}
+		return;
+	}
+}
+
+void sns_pro_fighter_qb_device::write_l(offs_t offset, uint8_t data)
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t bank = (offset >> 16) & 0xff;
+
+	// Banks $40-$6F, addresses $8000-$FFFF: DRAM
+	if (addr >= 0x8000 && bank >= 0x40 && bank < 0x70)
+	{
+		if (m_nvram.empty()) return;
+		const uint32_t dram_addr = QB_DRAM_START + (uint32_t(bank) * 0x8000) + (addr - 0x8000);
+		if (dram_addr < m_nvram.size())
+			m_nvram[dram_addr] = data;
+	}
+}
+
+void sns_pro_fighter_qb_device::fdc_drq_w(int state)
+{
+	if (!state || m_nvram.empty())
+		return;
+	const uint8_t data = m_fdc->dma_r();
+	const uint32_t nvram_addr = QB_DRAM_START + m_dma_addr;
+	if (nvram_addr < m_nvram.size())
+		m_nvram[nvram_addr] = data;
+	m_dma_addr = (m_dma_addr + 1) & 0x3fffff;
+}
+
 void sns_pro_fighter_qb_device::device_add_mconfig(machine_config &config)
 {
-	N82077AA(config, "fdc", 24_MHz_XTAL); // actually ACCMicro 3201, divider?
-	FLOPPY_CONNECTOR(config, "fdc:0", profght_floppies, "35dd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
+	auto &fdc = N82077AA(config, "fdc", 24_MHz_XTAL);
+	fdc.set_ready_polled(false);
+
+	FLOPPY_CONNECTOR(config, "fdc:1", profght_floppies, "35hd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
 
 	SNS_CART_SLOT(config, "cartslot", 0, snes_cart, nullptr);
 }
@@ -208,17 +458,9 @@ void sns_pro_fighter_qb_device::device_add_mconfig(machine_config &config)
 
 /*
 Pro Fighter X (MB03D) copier
-
-Main components:
-
-GM82C765B floppy disk controller
-16 MHz XTAL (for the FDC)
-96813 CIC replacement on one PCB, 265111 CIC replacement on another
-DDP1 custom (GRAPHIC DDP1-1 on one PCB, GINGER DDP1 9407 on another)
-MK4864N-120 standard SRAM, 8k x 8
-MS62256L-10PC CMOS Static RAM on one PCB; CXK58257M-10LL Static RAM on another
-2 x D421700G5-80L-7JD Fast Page DRAM (on a sub board)
 */
+
+DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_X, sns_pro_fighter_x_device, "profighterx", "Pro Fighter X (MB03D)")
 
 sns_pro_fighter_x_device::sns_pro_fighter_x_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: device_t(mconfig, SNS_PRO_FIGHTER_X, tag, owner, clock)
@@ -226,41 +468,24 @@ sns_pro_fighter_x_device::sns_pro_fighter_x_device(const machine_config &mconfig
 {
 }
 
-ROM_START( profghtx )
-	ROM_REGION( 0x10000, "program", 0 )
-	ROM_LOAD( "pfx ver1.20.u3", 0x00000, 0x10000, CRC(04635d41) SHA1(e2765907d03f62329db224c6570d65aea5df5154) )
-
-	ROM_REGION( 0x1200, "plds", ROMREGION_ERASE00 )
-	ROM_LOAD( "palce20v8h.u7",  0x0000, 0x0157, CRC(2a46e9b7) SHA1(3c2aca7dfa943e00b4227194ce90dfa89290d1a6) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce20v8h.u10", 0x0200, 0x0157, CRC(738765b4) SHA1(1357ca21112b9d6da735a1070deeaa8097cf2a6e) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "peel18cv8b.u12", 0x0400, 0x0155, CRC(e1ee3a45) SHA1(983918d504c16b20ae185679ed489b167c993609) ) // this is actually a recreation
-	ROM_LOAD( "palce16v8h.u13", 0x0600, 0x0117, CRC(611c95a9) SHA1(b138041dd99af0bed37f178d2733764309279ee6) ) // probably actual dump
-	ROM_LOAD( "palce16v8h.u14", 0x0800, 0x0117, CRC(82d9c905) SHA1(70c16fb86a16319246eae02d9e5439bc65453174) ) // probably actual dump
-	ROM_LOAD( "palce20v8h.u16", 0x0a00, 0x0157, CRC(3593d7e8) SHA1(47094c6469fed5f10bea9f0f993b0257fc39e12f) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce20v8h.u17", 0x0c00, 0x0157, CRC(f58539ae) SHA1(c5105f0dd9c7d0f966b84444c17fe798cfcdcdc1) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce20v8h.u18", 0x0e00, 0x0157, CRC(97d8652f) SHA1(6bff3088fed8253cfd2b57a101e91e0a0e66bcff) ) // this is actually a recreation targeted for a GAL20V8 device
-	ROM_LOAD( "palce20v8h.u19", 0x1000, 0x0157, CRC(2e42ed8f) SHA1(51f461756668a51e4f9b800168412dab26cd5ca9) ) // this is actually a recreation targeted for a GAL20V8 device
-ROM_END
-
-
 void sns_pro_fighter_x_device::device_start()
 {
 }
 
 void sns_pro_fighter_x_device::device_reset()
 {
+}
 
+ROM_START( profghtx )
+	ROM_REGION( 0x10000, "program", 0 )
+	ROM_LOAD( "u7", 0x0000, 0x10000, CRC(3e351e28) SHA1(a0e5af71c5fb2b4f4e5e0e3954f110d23c511299) )
+ROM_END
+
+void sns_pro_fighter_x_device::device_add_mconfig(machine_config &config)
+{
 }
 
 const tiny_rom_entry *sns_pro_fighter_x_device::device_rom_region() const
 {
 	return ROM_NAME( profghtx );
-}
-
-void sns_pro_fighter_x_device::device_add_mconfig(machine_config &config)
-{
-	WD37C65C(config, "fdc", 16_MHz_XTAL); // actually GM82C765B
-	FLOPPY_CONNECTOR(config, "fdc:0", profght_floppies, "35dd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
-
-	SNS_CART_SLOT(config, "cartslot", 0, snes_cart, nullptr);
 }
