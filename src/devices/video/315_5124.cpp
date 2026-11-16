@@ -1974,6 +1974,14 @@ void sega315_5313_mode4_device::stop_timers()
 	m_rborder_timer->adjust(attotime::never);
 }
 
+// Restarts what stop_timers() stopped, for a console switching into Mark III
+// (Master System) mode at runtime. The rest are re-armed line by line.
+void sega315_5313_mode4_device::start_timers()
+{
+	m_display_timer->adjust(screen().time_until_pos(0, DISPLAY_CB_HPOS), 0, screen().scan_period());
+	m_pending_flags_timer->adjust(screen().time_until_pos(0, WIDTH - 1), 0, screen().scan_period());
+}
+
 
 /*****************************************************************************
     DEVICE INTERFACE

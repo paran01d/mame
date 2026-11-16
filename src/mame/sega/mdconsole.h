@@ -25,7 +25,9 @@ public:
 		m_32x(*this,"sega32x"),
 		m_segacd(*this,"segacd"),
 		m_cart(*this, "mdslot"),
-		m_tmss(*this, "tmss")
+		m_tmss(*this, "tmss"),
+		m_z80_view(*this, "z80_view"),
+		m_z80_io_view(*this, "z80_io_view")
 	{ }
 
 	void init_genesis();
@@ -50,6 +52,7 @@ protected:
 
 	void md_ctrl_ports(machine_config &config);
 	void md_exp_port(machine_config &config);
+	void md_mark3(machine_config &config, bool pal);
 
 	optional_device_array<sms_control_port_device, 3> m_ctrl_ports;
 	optional_device<sega_32x_device> m_32x;
@@ -58,6 +61,29 @@ protected:
 	optional_region_ptr<uint16_t> m_tmss;
 
 private:
+	// Mark III (Master System) mode, selected by the cartridge's /M3 line
+	void md_cons_z80_map(address_map &map) ATTR_COLD;
+	void md_cons_z80_io_map(address_map &map) ATTR_COLD;
+	void set_mark3_mode(bool on);
+	void mark3_configure_screen();
+	uint32_t screen_update_console(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint8_t mark3_ram_r(offs_t offset);
+	void mark3_ram_w(offs_t offset, uint8_t data);
+	void mark3_io_control_w(uint8_t data);
+	uint8_t mark3_port_dc_r();
+	uint8_t mark3_port_dd_r();
+	void mark3_n_int_w(int state);
+
+	memory_view m_z80_view;
+	memory_view m_z80_io_view;
+	bool m_mark3_capable = false;
+	bool m_mark3_pal = false;
+	bool m_mark3 = false;
+	int m_md_screen_width = 0;
+	int m_md_screen_height = 0;
+	rectangle m_md_visarea;
+	attotime m_md_frame_period;
+
 	void _32x_scanline_callback(int x, uint32_t priority, uint32_t &lineptr);
 	void _32x_interrupt_callback(int scanline, int irq6);
 	void _32x_scanline_helper_callback(int scanline);

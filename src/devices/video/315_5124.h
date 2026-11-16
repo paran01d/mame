@@ -258,6 +258,7 @@ class sega315_5313_mode4_device : public sega315_5246_device
 {
 public:
 	void stop_timers();
+	void start_timers();
 
 protected:
 	sega315_5313_mode4_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u8 cram_size, u8 palette_offset, u8 reg_num_mask, int max_sprite_zoom_hcount, int max_sprite_zoom_vcount, const u8 *line_timing);
