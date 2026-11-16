@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
+<!--
+license:CC0-1.0
+-->
+
+<softwarelist name="snes_mgh_flop" description="Multi Game Hunter SNES disk images">
+
+	<software name="mghsdiag">
+		<description>Multi Game Hunter SNES DRAM Diagnostic (v1.0)</description>
+		<year>2026</year>
+		<publisher>&lt;homebrew&gt;</publisher>
+		<info name="usage" value="Run Disk File, then SFDIAG_A.016; insert disk 2 when asked"/>
+		<part name="flop1" interface="floppy_3_5">
+			<feature name="part_id" value="Disk 1"/>
+			<dataarea name="flop" size="1474560">
+				<rom name="mghsdiag1.img" size="1474560" crc="2af20136" sha1="ab6ca5a941eab51ec707339e9bd1f1fca2e0fb0f"/>
+			</dataarea>
+		</part>
+		<part name="flop2" interface="floppy_3_5">
+			<feature name="part_id" value="Disk 2"/>
+			<dataarea name="flop" size="1474560">
+				<rom name="mghsdiag2.img" size="1474560" crc="f86fffad" sha1="52c920e076ade38b51b17abb507f191bbf0d7343"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>

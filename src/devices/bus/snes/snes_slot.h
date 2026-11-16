@@ -123,6 +123,7 @@ public:
 	virtual void chip_write(offs_t offset, uint8_t data) { }
 	virtual void speedup_addon_bios_access() {}
 	virtual bool has_internal_bios() const { return false; } // true for copier devices with onboard firmware
+	virtual void install_io(address_space &space) { } // copier devices with I/O outside the cartridge areas
 
 	void rom_alloc(uint32_t size);
 	void nvram_alloc(uint32_t size);
@@ -191,6 +192,7 @@ public:
 	uint32_t snes_skip_header(const uint8_t *ROM, uint32_t snes_rom_size) const;
 	int get_type() { return m_type; }
 	bool cart_has_internal_bios() const { return m_cart && m_cart->has_internal_bios(); }
+	void install_cart_io(address_space &space) { if (m_cart) m_cart->install_io(space); }
 
 	void setup_nvram();
 	void internal_header_logging(uint8_t *ROM, uint32_t len);

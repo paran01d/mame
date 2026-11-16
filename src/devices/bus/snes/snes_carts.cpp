@@ -12,6 +12,7 @@
 
 #include "bsx.h"
 #include "event.h"
+#include "mgh.h"
 #include "rom.h"
 #include "rom21.h"
 #include "profighter.h"
@@ -25,7 +26,8 @@
 #include "upd.h"
 
 
-void snes_cart(device_slot_interface &device)
+// everything but the copiers: for the copiers' own pass-through slots
+void snes_cart_nocopier(device_slot_interface &device)
 {
 	device.option_add_internal("lorom",         SNS_LOROM);
 	device.option_add_internal("lorom_bsx",     SNS_LOROM_BSX);         // LoROM + BS-X slot - unsupported
@@ -69,9 +71,16 @@ void snes_cart(device_slot_interface &device)
 	device.option_add_internal("hirom_dsp1leg", SNS_HIROM_NECDSP1_LEG);
 	device.option_add_internal("lorom_st10leg", SNS_LOROM_SETA10_LEG);
 	device.option_add_internal("lorom_st11leg", SNS_LOROM_SETA11_LEG);
+}
+
+void snes_cart(device_slot_interface &device)
+{
+	snes_cart_nocopier(device);
+
 	// copiers
 	device.option_add("profighterq",  SNS_PRO_FIGHTER_Q);
 	device.option_add("profighterqa", SNS_PRO_FIGHTER_QA);
 	device.option_add("profighterqb", SNS_PRO_FIGHTER_QB);
 	device.option_add("profighterx",  SNS_PRO_FIGHTER_X);
+	device.option_add("mgh",          SNS_MULTI_GAME_HUNTER);
 }

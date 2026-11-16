@@ -14,5 +14,6 @@
 
 // supported devices
 void snes_cart(device_slot_interface &device);
+void snes_cart_nocopier(device_slot_interface &device);
 
 #endif // MAME_BUS_SNES_SNES_CARTS_H
