@@ -122,6 +122,7 @@ public:
 	virtual uint8_t chip_read(offs_t offset) { return 0xff; }
 	virtual void chip_write(offs_t offset, uint8_t data) { }
 	virtual void speedup_addon_bios_access() {}
+	virtual bool has_internal_bios() const { return false; } // true for copier devices with onboard firmware
 
 	void rom_alloc(uint32_t size);
 	void nvram_alloc(uint32_t size);
@@ -189,6 +190,7 @@ public:
 	void get_cart_type_addon(const uint8_t *ROM, uint32_t len, int &type, int &addon) const;
 	uint32_t snes_skip_header(const uint8_t *ROM, uint32_t snes_rom_size) const;
 	int get_type() { return m_type; }
+	bool cart_has_internal_bios() const { return m_cart && m_cart->has_internal_bios(); }
 
 	void setup_nvram();
 	void internal_header_logging(uint8_t *ROM, uint32_t len);
@@ -237,6 +239,7 @@ protected:
 	base_sns_cart_slot_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
 
 	// device_t implementation
+	virtual void device_config_complete() override ATTR_COLD;
 	virtual void device_start() override ATTR_COLD;
 
 private:

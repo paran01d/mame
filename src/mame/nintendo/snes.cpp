@@ -53,6 +53,8 @@ public:
 	void snes(machine_config &config);
 
 private:
+	bool m_copier = false;     // a copier with its own BIOS is in the slot
+
 	uint8_t snes20_hi_r(address_space &space, offs_t offset);
 	void snes20_hi_w(address_space &space, offs_t offset, uint8_t data);
 	uint8_t snes20_lo_r(address_space &space, offs_t offset);
@@ -152,20 +154,29 @@ uint8_t snes_console_state::snes20_hi_r(address_space &space, offs_t offset)
 		else if (address < 0x6000)
 			return snes_r_io(address);
 		else if (address < 0x8000)
+		{
+			if (m_copier)
+				return m_cartslot->chip_read(offset);
 			return snes_open_bus_r();
+		}
 		else
 			return m_cartslot->read_h(offset);
 	}
 	else if (offset < 0x700000)
 	{
-		if (address < 0x8000)
+		if (address < 0x8000 && !m_copier)
 			return snes_open_bus_r();
 		else
-			return m_cartslot->read_h(offset);
+			return m_cartslot->read_h(offset);  // copier: HiROM DRAM/windows also use $0000-$7FFF
 	}
 	else
 	{
 		if (m_type == SNES_SUFAMITURBO && address >= 0x8000 && offset < 0x740000)
+			return m_cartslot->read_h(offset);
+
+		// copier: banks $F0-$FF are DRAM/SRAM (hi mirrors of $70-$7F)
+		// Includes $FE-$FF which mirror $7E-$7F (WRAM in lo range, but cartridge in hi)
+		if (m_copier)
 			return m_cartslot->read_h(offset);
 
 		// here usually there is SRAM mirrored in the whole range, but if ROM is very large then arrives here too (see tokimeki and wizardg4)
@@ -211,6 +222,13 @@ void snes_console_state::snes20_hi_w(address_space &space, offs_t offset, uint8_
 			m_wram[address] = data;
 		else if (address < 0x6000)
 			snes_w_io(space, address, data);
+		else if (m_copier)
+			m_cartslot->chip_write(offset, data);   // copier: registers and DRAM windows
+	}
+	else if (m_copier)
+	{
+		// copier: banks $40-$7D — DRAM, HiROM page window and SRAM
+		m_cartslot->write_l(offset, data);
 	}
 	else if (offset >= 0x700000 && (m_cartslot->m_cart->get_rom_size() <= 0x200000 || address < 0x8000))    // NVRAM access
 	{
@@ -247,20 +265,28 @@ uint8_t snes_console_state::snes20_lo_r(address_space &space, offs_t offset)
 		else if (address < 0x6000)
 			return snes_r_io(address);
 		else if (address < 0x8000)
+		{
+			if (m_copier)
+				return m_cartslot->chip_read(offset);
 			return snes_open_bus_r();
+		}
 		else
 			return m_cartslot->read_l(offset);
 	}
 	else if (offset < 0x700000)
 	{
-		if (address < 0x8000)
+		if (address < 0x8000 && !m_copier)
 			return snes_open_bus_r();
 		else
-			return m_cartslot->read_l(offset);
+			return m_cartslot->read_l(offset);  // copier: HiROM DRAM/windows also use $0000-$7FFF
 	}
 	else
 	{
 		if (m_type == SNES_SUFAMITURBO && address >= 0x8000 && offset < 0x740000)
+			return m_cartslot->read_l(offset);
+
+		// copier: banks $70-$7D are DRAM/SRAM
+		if (m_copier)
 			return m_cartslot->read_l(offset);
 
 		// here usually there is SRAM mirrored in the whole range, but if ROM is very large then arrives here too (see tokimeki and wizardg4)
@@ -1183,7 +1209,8 @@ void snes_console_state::machine_start()
 {
 	snes_state::machine_start();
 
-	if (m_cartslot && m_cartslot->exists())
+	m_copier = m_cartslot && m_cartslot->cart_has_internal_bios();
+	if (m_cartslot && (m_cartslot->exists() || m_copier))
 	{
 		m_maincpu->space(AS_PROGRAM).install_readwrite_handler(0x000000, 0x7dffff, read8m_delegate(*this, FUNC(snes_console_state::snes20_lo_r)), write8m_delegate(*this, FUNC(snes_console_state::snes20_lo_w)));
 		m_maincpu->space(AS_PROGRAM).install_readwrite_handler(0x800000, 0xffffff, read8m_delegate(*this, FUNC(snes_console_state::snes20_hi_r)), write8m_delegate(*this, FUNC(snes_console_state::snes20_hi_w)));
@@ -1306,6 +1333,12 @@ void snes_console_state::machine_start()
 //              m_maincpu->space(AS_PROGRAM).install_write_handler(0x808000, 0x80ffff, 0, 0x780000, 0, write8sm_delegate(*m_cartslot, FUNC(base_sns_cart_slot_device::chip_write)));
 //              m_maincpu->set_5a22_map();
 				break;
+		}
+		// Internal BIOS copier devices (e.g. Pro Fighter QB) decode $28xx as device I/O
+		if (m_copier)
+		{
+			m_maincpu->space(AS_PROGRAM).install_read_handler(0x002800, 0x0028ff, 0, 0xbf0000, 0, read8sm_delegate(*m_cartslot, FUNC(base_sns_cart_slot_device::chip_read)));
+			m_maincpu->space(AS_PROGRAM).install_write_handler(0x002800, 0x0028ff, 0, 0xbf0000, 0, write8sm_delegate(*m_cartslot, FUNC(base_sns_cart_slot_device::chip_write)));
 		}
 		// install memory access taps (send address pin to cartridge slot)
 		m_maincpu->space(AS_PROGRAM).install_readwrite_tap

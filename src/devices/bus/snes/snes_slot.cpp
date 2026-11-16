@@ -255,6 +255,18 @@ base_sns_cart_slot_device::~base_sns_cart_slot_device()
 }
 
 //-------------------------------------------------
+//  device_config_complete - a copier with its own
+//  BIOS does not need a cartridge image
+//-------------------------------------------------
+
+void base_sns_cart_slot_device::device_config_complete()
+{
+	auto const *const cart = dynamic_cast<device_sns_cart_interface *>(get_card_device());
+	if (cart && cart->has_internal_bios())
+		set_must_be_loaded(false);
+}
+
+//-------------------------------------------------
 //  device_start - device-specific startup
 //-------------------------------------------------
 
