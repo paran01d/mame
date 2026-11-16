@@ -38,6 +38,152 @@ void md_cons_state::md_ctrl_ports(machine_config &config)
 	m_ioports[1]->set_out_handler(m_ctrl_ports[1], FUNC(sms_control_port_device::out_w));
 }
 
+// Mark III mode. Pin B30 of the cartridge edge goes to the VDP's M3 input:
+// a cartridge (the Power Base Converter, or a copier) that holds it low
+// makes the console start as a Master System. The 68000 is held in reset,
+// the Z80 becomes the main CPU with the Master System memory and I/O maps,
+// the VDP runs in Mode 4 and the joypads are read through ports $DC/$DD.
+// MegaTech runs its SMS games the same way (megatech.cpp).
+void md_cons_state::md_mark3(machine_config &config, bool pal)
+{
+	m_mark3_capable = true;
+	m_mark3_pal = pal;
+
+	m_z80snd->set_addrmap(AS_PROGRAM, &md_cons_state::md_cons_z80_map);
+	m_z80snd->set_addrmap(AS_IO, &md_cons_state::md_cons_z80_io_map);
+
+	m_vdp->n_int().set(FUNC(md_cons_state::mark3_n_int_w));
+	m_screen->set_screen_update(FUNC(md_cons_state::screen_update_console));
+}
+
+void md_cons_state::md_cons_z80_map(address_map &map)
+{
+	map(0x0000, 0xffff).view(m_z80_view);
+	m_z80_view[0](0x0000, 0xffff).m(*this, FUNC(md_cons_state::megadriv_z80_map));
+
+	// The Z80's 8KB RAM becomes the Master System's work RAM. The cartridge
+	// also sees the writes above $BFFF, for the Sega mapper's registers.
+	m_z80_view[1](0x0000, 0xbfff).rw(m_cart, FUNC(md_cart_slot_device::read_sms), FUNC(md_cart_slot_device::write_sms));
+	m_z80_view[1](0xc000, 0xffff).rw(FUNC(md_cons_state::mark3_ram_r), FUNC(md_cons_state::mark3_ram_w));
+}
+
+void md_cons_state::md_cons_z80_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0xff).view(m_z80_io_view);
+	m_z80_io_view[0](0x00, 0xff).noprw();
+
+	m_z80_io_view[1](0x00, 0xff).noprw();
+	m_z80_io_view[1](0x01, 0x01).mirror(0x3e).w(FUNC(md_cons_state::mark3_io_control_w));
+	m_z80_io_view[1](0x40, 0x40).mirror(0x3e).r(m_vdp, FUNC(sega315_5124_device::vcount_read));
+	m_z80_io_view[1](0x41, 0x41).mirror(0x3e).r(m_vdp, FUNC(sega315_5124_device::hcount_read));
+	m_z80_io_view[1](0x40, 0x7f).w(m_vdp, FUNC(sega315_5124_device::psg_w));
+	m_z80_io_view[1](0x80, 0x80).mirror(0x3e).rw(m_vdp, FUNC(sega315_5124_device::data_read), FUNC(sega315_5124_device::data_write));
+	m_z80_io_view[1](0x81, 0x81).mirror(0x3e).rw(m_vdp, FUNC(sega315_5124_device::control_read), FUNC(sega315_5124_device::control_write));
+	m_z80_io_view[1](0xc0, 0xc0).mirror(0x3e).r(FUNC(md_cons_state::mark3_port_dc_r));
+	m_z80_io_view[1](0xc1, 0xc1).mirror(0x3e).r(FUNC(md_cons_state::mark3_port_dd_r));
+}
+
+uint8_t md_cons_state::mark3_ram_r(offs_t offset)
+{
+	return m_genz80.z80_prgram[offset & 0x1fff];
+}
+
+void md_cons_state::mark3_ram_w(offs_t offset, uint8_t data)
+{
+	m_genz80.z80_prgram[offset & 0x1fff] = data;
+	m_cart->write_sms(0xc000 + offset, data);
+}
+
+// $3F: bits 0-3 set TR/TH of each port to input (1) or output (0), and
+// bits 4-7 are the levels driven on them while they are outputs.
+void md_cons_state::mark3_io_control_w(uint8_t data)
+{
+	m_ctrl_ports[0]->out_w(((BIT(data, 4, 2) | BIT(data, 0, 2)) << 5) | 0x1f, BIT(~data, 0, 2) << 5);
+	m_ctrl_ports[1]->out_w(((BIT(data, 6, 2) | BIT(data, 2, 2)) << 5) | 0x1f, BIT(~data, 2, 2) << 5);
+}
+
+// $DC: port 1 up, down, left, right, TL, TR, then port 2 up, down
+uint8_t md_cons_state::mark3_port_dc_r()
+{
+	return (m_ctrl_ports[0]->in_r() & 0x3f) | (m_ctrl_ports[1]->in_r() << 6);
+}
+
+// $DD: port 2 left, right, TL, TR, then /RESET and CONT (both high), and
+// the TH inputs of ports 1 and 2
+uint8_t md_cons_state::mark3_port_dd_r()
+{
+	uint8_t const p1 = m_ctrl_ports[0]->in_r();
+	uint8_t const p2 = m_ctrl_ports[1]->in_r();
+	return ((p2 >> 2) & 0x0f) | 0x30 | (BIT(p1, 6) << 6) | (BIT(p2, 6) << 7);
+}
+
+void md_cons_state::mark3_n_int_w(int state)
+{
+	if (m_mark3)
+		m_z80snd->set_input_line(0, state);
+}
+
+uint32_t md_cons_state::screen_update_console(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+{
+	if (m_mark3)
+		return m_vdp->screen_update(screen, bitmap, cliprect);
+
+	return screen_update_megadriv(screen, bitmap, cliprect);
+}
+
+// Mark III mode uses the Master System raster: 342 x 262 (313 PAL) at the
+// same pixel clock, which the VDP's Mode 4 timers are written against. Also
+// run after loading a state, as the screen's geometry is not saved (in Mega
+// Drive mode the VDP sets it again itself at the end of every frame).
+void md_cons_state::mark3_configure_screen()
+{
+	if (!m_mark3)
+		return;
+
+	bool const pal = m_mark3_pal;
+	int const height = pal ? sega315_5124_device::HEIGHT_PAL : sega315_5124_device::HEIGHT_NTSC;
+	int const top = sega315_5124_device::TBORDER_START + (pal ? sega315_5124_device::PAL_240_TBORDER_HEIGHT : sega315_5124_device::NTSC_224_TBORDER_HEIGHT);
+	int const lines = pal ? 240 : 224;
+	int const left = sega315_5124_device::LBORDER_START + sega315_5124_device::LBORDER_WIDTH;
+	rectangle const visarea(left, left + 255, top, top + lines - 1);
+	m_screen->configure(sega315_5124_device::WIDTH, height, visarea, attotime::from_hz(m_vdp->clock() / 10) * (sega315_5124_device::WIDTH * height));
+}
+
+// /M3 is sampled at reset, so a cartridge that changes it takes effect when
+// it resets the console. Called on every reset in Mark III mode, and when
+// leaving it.
+void md_cons_state::set_mark3_mode(bool on)
+{
+	m_mark3 = on;
+	m_z80_view.select(on ? 1 : 0);
+	m_z80_io_view.select(on ? 1 : 0);
+
+	if (on)
+	{
+		mark3_configure_screen();
+		m_maincpu->set_input_line(INPUT_LINE_RESET, ASSERT_LINE);
+		m_z80snd->set_input_line(0, CLEAR_LINE);   // the Mega Drive VDP's Z80 interrupt shares it
+		megadriv_stop_scanline_timer();
+		m_vdp->start_timers();
+
+		// Z80 out of reset and owning its bus
+		m_genz80.z80_is_reset = 0;
+		m_genz80.z80_has_bus = 1;
+
+		// all TR/TH lines inputs, as the I/O chip powers up
+		mark3_io_control_w(0xff);
+	}
+	else
+	{
+		m_vdp->stop_timers();
+		m_screen->configure(m_md_screen_width, m_md_screen_height, m_md_visarea, m_md_frame_period);
+		m_maincpu->set_input_line(INPUT_LINE_RESET, CLEAR_LINE);
+		m_z80snd->set_input_line(0, CLEAR_LINE);
+	}
+}
+
+
 void md_cons_state::md_exp_port(machine_config &config)
 {
 	SMS_CONTROL_PORT(config, m_ctrl_ports[2], sms_control_port_devices, nullptr);
@@ -81,6 +227,18 @@ void md_cons_state::machine_start()
 		m_cart->save_nvram();
 
 	m_genz80.z80_run_timer = timer_alloc(FUNC(md_cons_state::megadriv_z80_run_state), this);
+
+	m_md_screen_width = m_screen->width();
+	m_md_screen_height = m_screen->height();
+	m_md_visarea = m_screen->visible_area();
+	m_md_frame_period = m_screen->frame_period();
+	save_item(NAME(m_mark3));
+	if (m_mark3_capable)
+	{
+		m_z80_view.select(0);
+		m_z80_io_view.select(0);
+		machine().save().register_postload(save_prepost_delegate(FUNC(md_cons_state::mark3_configure_screen), this));
+	}
 }
 
 void md_cons_state::install_cartslot()
@@ -149,6 +307,14 @@ void md_cons_state::machine_reset()
 {
 	md_base_state::machine_reset();
 
+	// with an ordinary cartridge nothing changes
+	if (m_mark3_capable)
+	{
+		bool const m3 = m_cart && m_cart->m3_r();
+		if (m3 || m_mark3)
+			set_mark3_mode(m3);
+	}
+
 	// if the system has a 32x, pause the extra CPUs until they are actually turned on
 	if (m_32x)
 		m_32x->pause_cpu();
@@ -166,6 +332,10 @@ void md_cons_cd_state::machine_start()
 // same as screen_eof_megadriv but with addition of 32x and SegaCD/MegaCD pieces
 void md_cons_state::screen_vblank_console(int state)
 {
+	// in Mark III mode the VDP's Mode 4 timers run the frame
+	if (m_mark3)
+		return;
+
 	if (m_io_reset.read_safe(0) & 0x01)
 		m_maincpu->pulse_input_line(INPUT_LINE_RESET, attotime::zero);
 
@@ -198,6 +368,8 @@ void md_cons_slot_state::ms_megadriv(machine_config &config)
 
 	MD_CART_SLOT(config, m_cart, md_cart, nullptr).set_must_be_loaded(true);
 	SOFTWARE_LIST(config, "cart_list").set_original("megadriv").set_filter("NTSC-U");
+
+	md_mark3(config, false);
 }
 
 void md_cons_slot_state::ms_megadrivj(machine_config &config)
@@ -218,6 +390,8 @@ void md_cons_slot_state::ms_megadpal(machine_config &config)
 
 	MD_CART_SLOT(config, m_cart, md_cart, nullptr).set_must_be_loaded(true);
 	SOFTWARE_LIST(config, "cart_list").set_original("megadriv").set_filter("PAL");
+
+	md_mark3(config, true);
 }
 
 void md_cons_slot_state::ms_megadriv2(machine_config &config)
@@ -230,6 +404,8 @@ void md_cons_slot_state::ms_megadriv2(machine_config &config)
 
 	MD_CART_SLOT(config, m_cart, md_cart, nullptr).set_must_be_loaded(true);
 	SOFTWARE_LIST(config, "cart_list").set_original("megadriv").set_filter("NTSC-U");
+
+	md_mark3(config, false);
 }
 
 void md_cons_slot_state::ms_nomad(machine_config &config)
