@@ -26,6 +26,8 @@ public:
 	virtual void write_h(offs_t offset, uint8_t data) override;
 
 	virtual void disk_flip_side() override;
+	int current_side() const { return m_fds_current_side; }
+	int sides() const { return m_fds_sides; }
 
 	virtual void hblank_irq(int scanline, bool vblank, bool blanked) override;
 	virtual void pcb_reset() override;

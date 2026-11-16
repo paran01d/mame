@@ -4278,6 +4278,8 @@ if BUSES["NES"] then
 		MAME_DIR .. "src/devices/bus/nes/taito.h",
 		MAME_DIR .. "src/devices/bus/nes/tengen.cpp",
 		MAME_DIR .. "src/devices/bus/nes/tengen.h",
+		MAME_DIR .. "src/devices/bus/nes/tgd4.cpp",
+		MAME_DIR .. "src/devices/bus/nes/tgd4.h",
 		MAME_DIR .. "src/devices/bus/nes/txc.cpp",
 		MAME_DIR .. "src/devices/bus/nes/txc.h",
 		MAME_DIR .. "src/devices/bus/nes/vrc_clones.cpp",

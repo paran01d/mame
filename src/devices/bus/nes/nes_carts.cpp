@@ -29,6 +29,7 @@
 #include "sunsoft.h"
 #include "sunsoft_dcs.h"
 #include "taito.h"
+#include "tgd4.h"
 // unlicensed/bootleg/pirate PCBs
 #include "2a03pur.h"
 #include "act53.h"
@@ -516,6 +517,8 @@ void nes_cart(device_slot_interface &device)
 	device.option_add_internal("test",             NES_NROM);
 //
 	device.option_add_internal("unknown",          NES_NROM);  //  a few pirate dumps uses the wrong mapper...
+	// floppy copier: boots its own BIOS, with the FDS RAM adapter in its pass-through slot
+	device.option_add("tgd4",                      NES_TGD4);
 }
 
 void disksys_only(device_slot_interface &device)
