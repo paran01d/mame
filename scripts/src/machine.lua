@@ -1575,6 +1575,18 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/machine/ffelink.h,MACHINES["FFE_LINK"] = true
+---------------------------------------------------
+
+if MACHINES["FFE_LINK"] then
+	files {
+		MAME_DIR .. "src/devices/machine/ffelink.cpp",
+		MAME_DIR .. "src/devices/machine/ffelink.h",
+	}
+end
+
+---------------------------------------------------
+--
 --@src/devices/machine/fga002.h,MACHINES["FGA002"] = true
 ---------------------------------------------------
 
