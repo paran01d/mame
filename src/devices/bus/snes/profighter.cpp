@@ -1,12 +1,33 @@
 // license:BSD-3-Clause
-// copyright-holders:
+// copyright-holders:Ivan Vangelista, Mike Bissett
 
 /***********************************************************************************************************
 
  Super Pro Fighter Q (3 variants)
  Super Pro Fighter X (MB03D)
 
- TODO: everything
+ TODO: Q, QA and X are stubs. QB is emulated.
+
+ Memory map (QB, Mode 0 / BIOS mode):
+   $8000-$9FFF: DRAM page window (8KB, page selected by $E000-$E003)
+   $A000-$BFFF: IC card page window ($E00C) or copier SRAM ($E00D)
+   $C000-$FFFF: firmware ROM (16KB)
+   $E000-$E0FF: registers (write only, mirrored every 16 bytes)
+   $2800-$2807: floppy disk controller
+   $70-$7D:0000-$7FFF: 32KB SRAM
+
+ Hardware registers ($E000-$E00F):
+   $E000-$E003 W: DRAM/cart page select (8KB page number)
+   $E005 W:       System mode 1 — cart passthrough latch (survives reset)
+   $E006/7 W:     System mode 2/3 — DRAM cartridge emulation
+   $E00C W:       Select IC card at $A000-$BFFF
+   $E00D W:       Select copier SRAM at $A000-$BFFF
+
+ Page register + bank addressing:
+   DRAM write window ($8000-$9FFF):
+     offset = bank * 32KB + page * 8KB + (addr - $8000)
+   Cart read window ($A000-$BFFF):
+     offset = bank * 32KB + (page & 3) * 8KB + (addr - $A000)
 
  ***********************************************************************************************************/
 
@@ -19,6 +40,11 @@
 #include "imagedev/floppy.h"
 #include "machine/upd765.h"
 
+#include "softlist_dev.h"
+
+#define VERBOSE 0
+#include "logmacro.h"
+
 
 DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_Q, sns_pro_fighter_q_device, "profighterq", "Super Pro. Fighter Q (variant 1)");
 DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_QA, sns_pro_fighter_qa_device, "profighterqa", "Super Pro. Fighter Q (variant 2)");
@@ -28,6 +54,12 @@ DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_X, sns_pro_fighter_x_device, "profighterx", "
 
 static void profght_floppies(device_slot_interface &device)
 {
+	device.option_add("35dd", FLOPPY_35_DD);
+}
+
+static void profghtqb_floppies(device_slot_interface &device)
+{
+	device.option_add("35hd", FLOPPY_35_HD);
 	device.option_add("35dd", FLOPPY_35_DD);
 }
 
@@ -165,7 +197,34 @@ D43256AGU-15LL CMOS Static RAM
 sns_pro_fighter_qb_device::sns_pro_fighter_qb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: device_t(mconfig, SNS_PRO_FIGHTER_QB, tag, owner, clock)
 	, device_sns_cart_interface(mconfig, *this)
+	, m_program_rom(*this, "program")
+	, m_fdc(*this, "fdc")
+	, m_iccard(*this, "cartslot")
+	, m_dram_size_port(*this, "DRAM_SIZE")
+	, m_dram_size(DRAM_MAX)
+	, m_dram_mode(false)
+	, m_cart_passthrough(false)
+	, m_cart_enable(false)
+	, m_hirom(false)
+	, m_dram_page(0)
+	, m_fdc_irq(false)
 {
+}
+
+// The DRAM sub board holds eight 1M x 4 chips, two per megabyte (D0-D3 and
+// D4-D7).
+static INPUT_PORTS_START(profighter_qb)
+	PORT_START("DRAM_SIZE")
+	PORT_CONFNAME(0x03, 0x03, "DRAM Size")
+	PORT_CONFSETTING(0x00, "8 Mbit")
+	PORT_CONFSETTING(0x01, "16 Mbit")
+	PORT_CONFSETTING(0x02, "24 Mbit")
+	PORT_CONFSETTING(0x03, "32 Mbit")
+INPUT_PORTS_END
+
+ioport_constructor sns_pro_fighter_qb_device::device_input_ports() const
+{
+	return INPUT_PORTS_NAME(profighter_qb);
 }
 
 ROM_START( profghtqb ) // same program as profghtrq but different plds
@@ -185,11 +244,28 @@ ROM_END
 
 void sns_pro_fighter_qb_device::device_start()
 {
+	m_dram = std::make_unique<uint8_t[]>(DRAM_MAX);
+	m_sram = std::make_unique<uint8_t[]>(SRAM_SIZE);
+
+	save_pointer(NAME(m_dram), DRAM_MAX);
+	save_pointer(NAME(m_sram), SRAM_SIZE);
+	save_item(NAME(m_dram_mode));
+	save_item(NAME(m_cart_passthrough));
+	save_item(NAME(m_cart_enable));
+	save_item(NAME(m_hirom));
+	save_item(NAME(m_dram_page));
+	save_item(NAME(m_fdc_irq));
 }
 
 void sns_pro_fighter_qb_device::device_reset()
 {
+	// The mode latches (m_dram_mode, m_cart_passthrough) survive a console
+	// reset: the BIOS sets Mode 1 and then resets the console into the game.
+	m_dram_page = 0;
+	m_cart_enable = false;
 
+	m_dram_size = ((m_dram_size_port->read() & 0x03) + 1) * 0x100000;
+	LOG("DRAM %u Mbit\n", m_dram_size >> 17);
 }
 
 const tiny_rom_entry *sns_pro_fighter_qb_device::device_rom_region() const
@@ -197,12 +273,303 @@ const tiny_rom_entry *sns_pro_fighter_qb_device::device_rom_region() const
 	return ROM_NAME( profghtqb );
 }
 
+// DRAM above the installed size reads $FF
+uint8_t sns_pro_fighter_qb_device::dram_r(uint32_t offset) const
+{
+	if (offset >= m_dram_size)
+		return 0xff;
+
+	return m_dram[offset];
+}
+
+void sns_pro_fighter_qb_device::dram_w(uint32_t offset, uint8_t data)
+{
+	if (offset < m_dram_size)
+		m_dram[offset] = data;
+}
+
+// Mode 2 (DRAM as the cartridge ROM): LoROM is $8000-$FFFF of banks $00-$7D,
+// HiROM is the whole of banks $40-$7D and $C0-$FF. Reads and writes decode
+// the same way.
+bool sns_pro_fighter_qb_device::dram_mode_offset(offs_t offset, uint32_t &dram) const
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t bk = (offset >> 16) & 0x7f;
+
+	if (m_hirom)
+	{
+		dram = uint32_t(bk & 0x3f) * 0x10000 + addr;
+		return true;
+	}
+	if (addr >= 0x8000)
+	{
+		dram = uint32_t(bk) * 0x8000 + (addr - 0x8000);
+		return true;
+	}
+	return false;
+}
+
+// The IC card window drives the card with a normal SNES address (page bits
+// on A13-A14), and the card decodes it itself, so LoROM and HiROM carts both
+// read correctly. For a HiROM cart, LoROM-mode reads at $80:A000 page 3 show
+// ROM $E000-$FFFF, where its header lives.
+uint8_t sns_pro_fighter_qb_device::iccard_read(uint8_t bank, uint16_t addr)
+{
+	const offs_t a = (offs_t(bank & 0x7f) << 16) | (addr & 0x8000) | (offs_t(m_dram_page & 0x03) << 13) | (addr & 0x1fff);
+	return m_iccard->read_h(a);
+}
+
+uint8_t sns_pro_fighter_qb_device::firmware_r(uint16_t addr) const
+{
+	return m_program_rom->base()[addr & (m_program_rom->bytes() - 1) & 0x3fff];
+}
+
+uint8_t sns_pro_fighter_qb_device::read_h(offs_t offset)
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t bk = (offset >> 16) & 0x7f;
+
+	// Mode 1: the IC card is the cartridge
+	if (m_cart_passthrough && m_iccard->exists())
+		return m_iccard->read_h(offset & 0x7fffff);
+
+	uint32_t dram;
+	if (m_dram_mode && dram_mode_offset(offset, dram))
+		return dram_r(dram);
+
+	// HiROM, Mode 0: banks $C0-$FF have the DRAM window at $0000/$8000 and
+	// the IC card window at $2000/$A000
+	if (m_hirom && !m_dram_mode && bk >= 0x40)
+	{
+		const uint16_t w = addr & 0x7fff;
+		if (w < 0x2000)
+			return dram_r(uint32_t(bk & 0x3f) * 0x10000 + (addr & 0x8000) + uint32_t(m_dram_page & 0x03) * 0x2000 + (addr & 0x1fff));
+		if (w < 0x4000 && m_cart_enable && m_iccard->exists())
+			return iccard_read(bk, addr);
+		if (addr < 0x8000)
+			return 0xff;
+	}
+
+	// $0000-$7FFF: the IC card window at $2000-$3FFF of banks $40+ (the BIOS
+	// reads $40:2000-3FFF to tell HiROM cards from LoROM ones), SRAM in
+	// banks $70+, otherwise nothing
+	if (addr < 0x8000)
+	{
+		if (!m_dram_mode && bk >= 0x40 && (addr & 0x6000) == 0x2000 && m_cart_enable && m_iccard->exists())
+			return iccard_read(bk, addr);
+		if (bk >= 0x70)
+			return m_sram[addr & (SRAM_SIZE - 1)];
+		return 0xff;
+	}
+
+	// Mode 0: DRAM page window at $8000-$9FFF (all 128 banks, for 4MB)
+	if (addr < 0xa000)
+		return dram_r(uint32_t(bk) * 0x8000 + uint32_t(m_dram_page) * 0x2000 + (addr - 0x8000));
+
+	// Mode 0: IC card window at $A000-$BFFF
+	if (addr < 0xc000 && m_cart_enable && m_iccard->exists())
+		return iccard_read(bk, addr);
+
+	return firmware_r(addr);
+}
+
+uint8_t sns_pro_fighter_qb_device::read_l(offs_t offset)
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t bank = (offset >> 16) & 0xff;
+
+	// Mode 1, Mode 2, HiROM and $0000-$7FFF map the same as the hi banks
+	if ((m_cart_passthrough && m_iccard->exists()) || m_dram_mode || m_hirom || addr < 0x8000)
+		return read_h(offset);
+
+	if (addr < 0xc000)
+	{
+		// $A000-$BFFF: IC card window
+		if (addr >= 0xa000 && m_cart_enable && m_iccard->exists())
+			return iccard_read(bank, addr);
+
+		// $8000-$BFFF: DRAM page window
+		return dram_r(uint32_t(bank) * 0x8000 + uint32_t(m_dram_page) * 0x2000 + (addr - 0x8000));
+	}
+
+	// $C000-$FFFF: DRAM in banks $40-$6F, firmware below
+	if (bank >= 0x40)
+		return dram_r(uint32_t(bank) * 0x8000 + (addr - 0x8000));
+
+	return read_h(offset);
+}
+
+void sns_pro_fighter_qb_device::fdc_irq_w(int state)
+{
+	m_fdc_irq = state;
+}
+
+uint8_t sns_pro_fighter_qb_device::read_ram(offs_t offset)
+{
+	return m_sram[offset & (SRAM_SIZE - 1)];
+}
+
+void sns_pro_fighter_qb_device::write_ram(offs_t offset, uint8_t data)
+{
+	m_sram[offset & (SRAM_SIZE - 1)] = data;
+}
+
+// $2800-$28FF (relative offset): the floppy disk controller, mirrored
+uint8_t sns_pro_fighter_qb_device::chip_read(offs_t offset)
+{
+	const uint16_t addr = offset & 0xffff;
+
+	if (addr <= 0xff)
+	{
+		switch (addr & 7)
+		{
+		case 0: return m_fdc_irq ? 0x80 : 0x00; // the FDC's input port (see device_add_mconfig)
+		case 4: return m_fdc->msr_r();
+		case 5: return m_fdc->fifo_r();
+		case 7: return m_fdc->dir_r();
+		default: return 0xff;
+		}
+	}
+
+	return 0xff;
+}
+
+void sns_pro_fighter_qb_device::chip_write(offs_t offset, uint8_t data)
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t bank = (offset >> 16) & 0xff;
+
+	if (addr <= 0xff)
+	{
+		switch (addr & 7)
+		{
+		case 2: m_fdc->dor_w(data); break;
+		case 5: m_fdc->fifo_w(data); break;
+		case 7: m_fdc->ccr_w(data); break;
+		}
+		return;
+	}
+
+	if (addr < 0x8000)
+		return;
+
+	// $E000-$E0FF: registers. The address selects the register and the data
+	// is ignored, except for the page register. They mirror every 16 bytes:
+	// the BIOS writes $E04A/$E04B for FIG headers with byte 5 bit 7 set.
+	if ((addr & 0xff00) == 0xe000)
+	{
+		switch (addr & 0x000f)
+		{
+		case 0x0: case 0x1: case 0x2: case 0x3:
+			m_dram_page = data;
+			break;
+		case 0x4:   // Mode 0: the BIOS
+			m_dram_mode = false;
+			m_cart_passthrough = false;
+			break;
+		case 0x5:   // Mode 1: the IC card, after a console reset
+			if (!m_cart_passthrough && BIT(data, 7))
+			{
+				m_cart_passthrough = true;
+				machine().schedule_soft_reset();
+			}
+			break;
+		case 0x6: case 0x7:     // Mode 2: DRAM. The BIOS jumps through ($FFFC) next.
+			m_dram_mode = true;
+			break;
+		case 0xc:   // $A000-$BFFF shows the IC card
+			m_cart_enable = true;
+			break;
+		case 0xd:   // $A000-$BFFF shows the copier SRAM
+			m_cart_enable = false;
+			break;
+		case 0xe:   // LoROM
+			m_hirom = false;
+			break;
+		case 0xf:   // HiROM
+			m_hirom = true;
+			break;
+		}
+		return;
+	}
+
+	uint32_t dram;
+	if (m_dram_mode)
+	{
+		if (dram_mode_offset(offset, dram))
+			dram_w(dram, data);
+		return;
+	}
+
+	// Mode 0: $A000-$BFFF writes the IC card's SRAM while the card is shown
+	if (addr >= 0xa000 && addr < 0xc000 && m_cart_enable && m_iccard->exists())
+	{
+		if (m_iccard->m_cart && m_iccard->m_cart->get_nvram_size() > 0)
+			m_iccard->write_ram(uint32_t(bank) * 0x8000 + uint32_t(m_dram_page & 0x03) * 0x2000 + (addr - 0xa000), data);
+		return;
+	}
+
+	// Mode 0: page window at $8000-$9FFF, linear above
+	if (addr < 0xa000)
+		dram_w(uint32_t(bank) * 0x8000 + uint32_t(m_dram_page) * 0x2000 + (addr - 0x8000), data);
+	else
+		dram_w(uint32_t(bank) * 0x8000 + (addr - 0x8000), data);
+}
+
+void sns_pro_fighter_qb_device::write_l(offs_t offset, uint8_t data)
+{
+	const uint16_t addr = offset & 0xffff;
+	const uint8_t bank = (offset >> 16) & 0xff;
+
+	uint32_t dram;
+	if (m_dram_mode && dram_mode_offset(offset, dram))
+	{
+		dram_w(dram, data);
+		return;
+	}
+
+	// HiROM, Mode 0: DRAM page window at $0000/$8000 of banks $C0-$FF
+	if (m_hirom && bank >= 0x40)
+	{
+		if ((addr & 0x7fff) < 0x2000)
+			dram_w(uint32_t(bank & 0x3f) * 0x10000 + (addr & 0x8000) + uint32_t(m_dram_page & 0x03) * 0x2000 + (addr & 0x1fff), data);
+		return;
+	}
+
+	// $70-$7D:0000-$7FFF: SRAM
+	if (addr < 0x8000)
+	{
+		if (bank >= 0x70)
+			m_sram[addr & (SRAM_SIZE - 1)] = data;
+		return;
+	}
+
+	// Mode 0, banks $40-$7D: page window at $8000-$9FFF, linear above
+	if (bank >= 0x40)
+	{
+		if (addr < 0xa000)
+			dram_w(uint32_t(bank) * 0x8000 + uint32_t(m_dram_page) * 0x2000 + (addr - 0x8000), data);
+		else
+			dram_w(uint32_t(bank) * 0x8000 + (addr - 0x8000), data);
+	}
+}
+
 void sns_pro_fighter_qb_device::device_add_mconfig(machine_config &config)
 {
-	N82077AA(config, "fdc", 24_MHz_XTAL); // actually ACCMicro 3201, divider?
-	FLOPPY_CONNECTOR(config, "fdc:0", profght_floppies, "35dd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
+	// The BIOS uses only the 3201's registers: $2800 (the input port), DOR,
+	// MSR, FIFO and CCR. On the input port, bit 7 is the FDC's own
+	// interrupt, which the BIOS polls after a command; bits 3-0 and 5 are the
+	// PC link's data and strobe, with $2808-$2810 the rest of the link.
+	// Nothing is connected to the link, so it stays idle.
+	// TODO: the PC link
+	MCS3201(config, m_fdc, 24_MHz_XTAL);
+	m_fdc->intrq_wr_callback().set(FUNC(sns_pro_fighter_qb_device::fdc_irq_w));
 
-	SNS_CART_SLOT(config, "cartslot", snes_cart, nullptr);
+	// the BIOS selects drive 1
+	FLOPPY_CONNECTOR(config, "fdc:1", profghtqb_floppies, "35hd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
+	SOFTWARE_LIST(config, "flop_list").set_original("snes_profighter_flop");
+
+	SNS_CART_SLOT(config, m_iccard, snes_cart, nullptr);
 }
 
 

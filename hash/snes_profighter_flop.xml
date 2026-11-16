@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
+<!--
+license:CC0-1.0
+-->
+
+<softwarelist name="snes_profighter_flop" description="Super Pro Fighter Q disk images">
+
+	<software name="qbdiag">
+		<description>Pro Fighter QB DRAM Diagnostic (v1.0)</description>
+		<year>2026</year>
+		<publisher>&lt;homebrew&gt;</publisher>
+		<info name="usage" value="RUN FILE, then DIAG.SMC (DIAG_SR, DIAG_DS and DIAG_00 differ only in their headers)"/>
+		<part name="flop1" interface="floppy_3_5">
+			<dataarea name="flop" size="1474560">
+				<rom name="qbdiag.img" size="1474560" crc="21930b74" sha1="1a0692babc2e2ff5bed68ca3025485871412bf52"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>
