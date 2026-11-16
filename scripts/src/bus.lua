@@ -4780,6 +4780,20 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/bus/pclink/pclink.h,BUSES["PCLINK"] = true
+---------------------------------------------------
+
+if BUSES["PCLINK"] then
+	files {
+		MAME_DIR .. "src/devices/bus/pclink/pclink.cpp",
+		MAME_DIR .. "src/devices/bus/pclink/pclink.h",
+		MAME_DIR .. "src/devices/bus/pclink/remote.cpp",
+		MAME_DIR .. "src/devices/bus/pclink/remote.h",
+	}
+end
+
+---------------------------------------------------
+--
 --@src/devices/bus/pce/pce_slot.h,BUSES["PCE"] = true
 ---------------------------------------------------
 if BUSES["PCE"] then
