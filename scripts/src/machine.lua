@@ -2665,6 +2665,18 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/machine/mghfdd.h,MACHINES["MGH_FDD"] = true
+---------------------------------------------------
+
+if MACHINES["MGH_FDD"] then
+	files {
+		MAME_DIR .. "src/devices/machine/mghfdd.cpp",
+		MAME_DIR .. "src/devices/machine/mghfdd.h",
+	}
+end
+
+---------------------------------------------------
+--
 --@src/devices/machine/microtch.h,MACHINES["MICROTOUCH"] = true
 ---------------------------------------------------
 
