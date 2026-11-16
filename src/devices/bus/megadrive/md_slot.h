@@ -110,6 +110,14 @@ public:
 
 	virtual int read_test() { return 0; }   // used by Virtua Racing test
 
+	// Mark III mode: a cartridge holding /M3 (pin B30) low makes the console
+	// start as a Master System - the 68000 stays in reset, the Z80 runs the
+	// cartridge and the VDP is in Mode 4. read_sms/write_sms are that Z80's
+	// memory accesses below $C000; writes above it (mapper registers) arrive too.
+	virtual bool m3_r() { return false; }
+	virtual uint8_t read_sms(offs_t offset) { return 0xff; }
+	virtual void write_sms(offs_t offset, uint8_t data) {}
+
 	// this probably should do more, like make Genesis V2 'die' if the SEGA string is not written promptly
 	virtual void write_tmss_bank(offs_t offset, uint16_t data) { device().logerror("Write to TMSS bank: offset %x data %x\n", 0xa14000 + (offset << 1), data); }
 
@@ -189,6 +197,10 @@ public:
 	virtual void write_tmss_bank(offs_t offset, uint16_t data) { if (m_cart) m_cart->write_tmss_bank(offset, data); }
 
 	virtual int read_test() { if (m_cart) return m_cart->read_test(); else return 0; }  // used by Virtua Racing test
+
+	bool m3_r() { return m_cart && m_cart->m3_r(); }
+	uint8_t read_sms(offs_t offset) { return m_cart ? m_cart->read_sms(offset) : 0xff; }
+	void write_sms(offs_t offset, uint8_t data) { if (m_cart) m_cart->write_sms(offset, data); }
 
 // TODO: this only needs to be public because megasvp copies ROM into memory region, so we need to rework that code...
 //private:
