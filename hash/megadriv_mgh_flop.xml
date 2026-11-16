@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
+<!--
+license:CC0-1.0
+-->
+
+<softwarelist name="megadriv_mgh_flop" description="Multi Game Hunter Mega Drive disk images">
+
+	<software name="mghmddiag">
+		<description>Multi Game Hunter Mega Drive DRAM Diagnostic (v1.0)</description>
+		<year>2026</year>
+		<publisher>&lt;homebrew&gt;</publisher>
+		<info name="usage" value="Run, then MDDIAG_A.016; insert disk 2 when asked"/>
+		<part name="flop1" interface="floppy_3_5">
+			<feature name="part_id" value="Disk 1"/>
+			<dataarea name="flop" size="1474560">
+				<rom name="mghmddiag1.img" size="1474560" crc="6d824c12" sha1="aa4e9deaf98923d146201c2b06b27d606609f618"/>
+			</dataarea>
+		</part>
+		<part name="flop2" interface="floppy_3_5">
+			<feature name="part_id" value="Disk 2"/>
+			<dataarea name="flop" size="1474560">
+				<rom name="mghmddiag2.img" size="1474560" crc="a24e1e00" sha1="8d71d03db204151bc7bb34a009d8a3da6b9716f9"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>

@@ -12,6 +12,7 @@
 #include "eeprom.h"
 #include "ggenie.h"
 #include "jcart.h"
+#include "mgh.h"
 #include "rom.h"
 #include "sk.h"
 #include "stm95.h"
@@ -20,7 +21,8 @@
 #include "tplay96.h"
 
 
-void md_cart(device_slot_interface &device)
+// everything but the copiers: for the copiers' own pass-through slots
+void md_cart_nocopier(device_slot_interface &device)
 {
 	device.option_add_internal("rom",  MD_STD_ROM);
 	device.option_add_internal("rom_svp",  MD_ROM_SVP);
@@ -89,4 +91,12 @@ void md_cart(device_slot_interface &device)
 	device.option_add_internal("rom_titan", MD_ROM_TITAN);
 
 	device.option_add_internal("rom_tplay96", MD_ROM_TPLAY96);
+}
+
+void md_cart(device_slot_interface &device)
+{
+	md_cart_nocopier(device);
+
+	// floppy copiers: they boot their own BIOS, with the game cartridge in their pass-through slot
+	device.option_add("mgh", MD_MULTI_GAME_HUNTER);
 }

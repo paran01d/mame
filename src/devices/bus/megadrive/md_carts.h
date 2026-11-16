@@ -14,5 +14,6 @@
 
 // supported devices
 void md_cart(device_slot_interface &device);
+void md_cart_nocopier(device_slot_interface &device);
 
 #endif // MAME_BUS_MEGADRIVE_MD_CARTS_H

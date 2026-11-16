@@ -194,6 +194,14 @@ base_md_cart_slot_device::~base_md_cart_slot_device()
 //  device_start - device-specific startup
 //-------------------------------------------------
 
+void base_md_cart_slot_device::device_config_complete()
+{
+	// a copier with its own BIOS does not need a cartridge image
+	auto const *const cart = get_card_device();
+	if (cart && cart->has_internal_bios())
+		set_must_be_loaded(false);
+}
+
 void base_md_cart_slot_device::device_start()
 {
 	m_cart = get_card_device();

@@ -115,6 +115,7 @@ public:
 	// cartridge and the VDP is in Mode 4. read_sms/write_sms are that Z80's
 	// memory accesses below $C000; writes above it (mapper registers) arrive too.
 	virtual bool m3_r() { return false; }
+	virtual bool has_internal_bios() const { return false; } // a copier: boots its own BIOS, needs no image
 	virtual uint8_t read_sms(offs_t offset) { return 0xff; }
 	virtual void write_sms(offs_t offset, uint8_t data) {}
 
@@ -212,6 +213,7 @@ protected:
 	base_md_cart_slot_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
 
 	// device_t implementation
+	virtual void device_config_complete() override ATTR_COLD;
 	virtual void device_start() override ATTR_COLD;
 };
 

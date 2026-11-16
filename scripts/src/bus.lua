@@ -3590,6 +3590,8 @@ if BUSES["MEGADRIVE"] then
 		MAME_DIR .. "src/devices/bus/megadrive/md_slot.h",
 		MAME_DIR .. "src/devices/bus/megadrive/md_carts.cpp",
 		MAME_DIR .. "src/devices/bus/megadrive/md_carts.h",
+		MAME_DIR .. "src/devices/bus/megadrive/mgh.cpp",
+		MAME_DIR .. "src/devices/bus/megadrive/mgh.h",
 		MAME_DIR .. "src/devices/bus/megadrive/eeprom.cpp",
 		MAME_DIR .. "src/devices/bus/megadrive/eeprom.h",
 		MAME_DIR .. "src/devices/bus/megadrive/ggenie.cpp",
