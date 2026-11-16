@@ -84,6 +84,8 @@ enum
 	// TXC
 	TXC_22110, TXC_22211, TXC_COMMANDOS, TXC_DUMARACING,
 	TXC_MJBLOCK, TXC_STRIKEW, TXC_TW,
+	// Venus
+	VENUS_TGD4,
 	// Multigame Carts
 	BMC_64IN1NR, BMC_190IN1, BMC_A65AS, BMC_A88S1, BMC_F15, BMC_F600, BMC_L6IN1,
 	BMC_GN45, BMC_HIK8IN1, BMC_SFC12, BMC_JY208, BMC_JY302, BMC_KC885, BMC_KL06,
@@ -204,6 +206,8 @@ public:
 
 	// hack until disk system is made modern!
 	virtual void disk_flip_side() { }
+	virtual bool has_internal_bios() const { return false; } // a copier: boots its own BIOS, needs no image
+	void set_irq_redirect(devcb_write_line *cb) { m_irq_redirect = cb; } // see nes_cart_slot_device::irq_callback()
 
 	void prg_alloc(size_t size);
 	void vrom_alloc(size_t size);
@@ -281,6 +285,7 @@ private:
 	// HACK: to reduce tagmap lookups for PPU-related IRQs, we add a hook to the
 	// main NES CPU here, even if it does not belong to this device.
 	required_device<cpu_device> m_maincpu;
+	devcb_write_line *m_irq_redirect;   // the slot's IRQ callback, if it has one
 
 protected:
 	// these are specific of some boards but must be accessible from the driver
@@ -422,6 +427,9 @@ public:
 
 	int get_pcb_id() { return m_pcb_id; }
 
+	// a pass-through slot can take its card's IRQ instead of the CPU
+	auto irq_callback() { return m_irq_cb.bind(); }
+
 	void pcb_start(uint8_t *ciram_ptr);
 	void pcb_reset();
 
@@ -436,7 +444,10 @@ public:
 
 protected:
 	// device_t implementation
+	virtual void device_config_complete() override ATTR_COLD;
 	virtual void device_start() override ATTR_COLD;
+
+	devcb_write_line m_irq_cb;
 
 	const char * get_default_card_ines(get_default_card_software_hook &hook, const uint8_t *ROM, uint32_t len) const;
 	static const char * get_default_card_unif(const uint8_t *ROM, uint32_t len);

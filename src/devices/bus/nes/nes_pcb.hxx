@@ -253,6 +253,7 @@ static const nes_pcb pcb_list[] =
 	{ "h2288",            UNL_H2288 },
 	{ "unl_6035052",      UNL_603_5052 },   // mapper 238
 	{ "txc_tw",           TXC_TW },
+	{ "tgd4",             VENUS_TGD4 },
 	{ "kof97",            UNL_KOF97 },
 	{ "kof96",            UNL_KOF96 },
 	{ "sfight3",          UNL_SF3 },

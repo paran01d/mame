@@ -116,6 +116,7 @@ device_nes_cart_interface::device_nes_cart_interface(const machine_config &mconf
 	// HACK: to reduce tagmap lookups for PPU-related IRQs, we add a hook to the
 	// main NES CPU here, even if it does not belong to this device.
 	, m_maincpu(*this, ":maincpu")
+	, m_irq_redirect(nullptr)
 	, m_mapper_sram(nullptr)
 	, m_misc_rom(nullptr)
 	, m_mapper_sram_size(0)
@@ -471,7 +472,10 @@ void device_nes_cart_interface::set_irq_line(int state)
 {
 	assert(state == ASSERT_LINE || state == CLEAR_LINE);
 
-	m_maincpu->set_input_line(m6502_device::IRQ_LINE, state);
+	if (m_irq_redirect)
+		(*m_irq_redirect)(state);
+	else
+		m_maincpu->set_input_line(m6502_device::IRQ_LINE, state);
 }
 
 //-------------------------------------------------
@@ -657,6 +661,7 @@ nes_cart_slot_device::nes_cart_slot_device(const machine_config &mconfig, const 
 	, m_crc_hack(0)
 	, m_cart(nullptr)
 	, m_pcb_id(NO_BOARD)
+	, m_irq_cb(*this)
 {
 }
 
@@ -672,9 +677,23 @@ nes_cart_slot_device::~nes_cart_slot_device()
 //  device_start - device-specific startup
 //-------------------------------------------------
 
+void nes_cart_slot_device::device_config_complete()
+{
+	// a copier with its own BIOS does not need a cartridge image
+	auto const *const cart = get_card_device();
+	if (cart && cart->has_internal_bios())
+		set_must_be_loaded(false);
+}
+
 void nes_cart_slot_device::device_start()
 {
 	m_cart = get_card_device();
+	if (m_cart && !m_irq_cb.isunset())
+		m_cart->set_irq_redirect(&m_irq_cb);
+
+	// with no image, a copier is known by its slot option
+	if (m_cart && m_cart->has_internal_bios())
+		m_pcb_id = nes_get_pcb_id(m_cart->device().basetag());
 }
 
 

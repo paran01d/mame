@@ -212,7 +212,8 @@ void nes_state::machine_start()
 			UNL_EH8813A,
 			UNL_LH10,
 			UNL_LH32,
-			UNL_RT01
+			UNL_RT01,
+			VENUS_TGD4
 		};
 
 		static const int w_ex_pcbs[] =
@@ -229,7 +230,8 @@ void nes_state::machine_start()
 			BTL_09034A,
 			KAISER_KS7017,
 			STD_DISKSYS,
-			UNL_603_5052
+			UNL_603_5052,
+			VENUS_TGD4
 		};
 
 		int pcb_id = m_cartslot->get_pcb_id();
@@ -359,6 +361,7 @@ void nes_state::screen_vblank_nes(int state)
 	{
 		// if this is a disk system game, check for the flip-disk key
 		if ((m_cartslot && m_cartslot->exists() && (m_cartslot->get_pcb_id() == STD_DISKSYS))   // first scenario = disksys in m_cartslot (= famicom)
+				|| (m_cartslot && (m_cartslot->get_pcb_id() == VENUS_TGD4))   // disksys behind a copier in m_cartslot
 				|| m_disk)  // second scenario = disk via fixed internal disk option (fds & famitwin)
 		{
 			if (m_io_disksel)
