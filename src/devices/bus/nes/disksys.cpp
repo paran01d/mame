@@ -23,6 +23,10 @@
 #include "formats/nes_dsk.h"
 #include "speaker.h"
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
 #ifdef NES_PCB_DEBUG
 #define VERBOSE (LOG_GENERAL)
 #else
@@ -109,7 +113,7 @@ nes_disksys_device::nes_disksys_device(const machine_config &mconfig, const char
 	, irq_timer(nullptr)
 	, m_irq_count(0), m_irq_count_latch(0), m_irq_enable(false), m_irq_repeat(false), m_irq_transfer(false), m_disk_reg_enable(false), m_sound_en(false)
 	, m_fds_motor_on(0), m_fds_door_closed(0), m_fds_current_side(0), m_fds_head_position(0), m_fds_status0(0), m_read_mode(0), m_drive_ready(0)
-	, m_fds_sides(0), m_fds_last_side(0), m_fds_count(0)
+	, m_fds_sides(0), m_fds_side_size(65500), m_fds_last_side(0), m_fds_count(0)
 {
 }
 
@@ -269,7 +273,7 @@ void nes_disksys_device::write_ex(offs_t offset, uint8_t data)
 			// write data out to disk
 			// TEST!
 			if (m_fds_data && m_fds_current_side && !m_read_mode)
-				m_fds_data[(m_fds_current_side - 1) * 65500 + m_fds_head_position++] = data;
+				m_fds_data[(m_fds_current_side - 1) * m_fds_side_size + m_fds_head_position++] = data;
 			// clear the byte transfer flag
 			m_fds_status0 &= ~0x02;
 			set_irq_line(CLEAR_LINE);
@@ -360,11 +364,11 @@ uint8_t nes_disksys_device::read_ex(offs_t offset)
 				ret = 0;
 			else if (m_fds_current_side && m_read_mode)
 			{
-				ret = m_fds_data[(m_fds_current_side - 1) * 65500 + m_fds_head_position];
+				ret = m_fds_data[(m_fds_current_side - 1) * m_fds_side_size + m_fds_head_position];
 				if (!machine().side_effects_disabled())
 				{
 					m_fds_head_position++;
-					if (m_fds_head_position == 65500)
+					if (m_fds_head_position == m_fds_side_size)
 					{
 						logerror("%s: end of disk reached!\n", machine().describe_context());
 						m_fds_status0 |= 0x40;
@@ -466,18 +470,89 @@ void nes_disksys_device::load_disk(device_image_interface &image)
 {
 	int header = 0;
 	m_fds_sides = 0;
+	m_fds_side_size = 65500;
+
+	uint8_t start[18] = { };
+	image.fseek(0, SEEK_SET);
+	image.fread(start, std::min<uint64_t>(sizeof(start), image.length()));
+	if (nes_dsk_is_gamedoctor(start, image.length()))
+	{
+		auto data = std::make_unique<uint8_t[]>(image.length());
+		image.fseek(0, SEEK_SET);
+		image.fread(data.get(), image.length());
+		load_gamedoctor(data.get(), image.length());
+		return;
+	}
 
 	if (image.length() % 65500)
 		header = 0x10;
 
 	m_fds_sides = (image.length() - header) / 65500;
 
-	if (!m_fds_data)
-		m_fds_data = std::make_unique<uint8_t[]>(m_fds_sides * 65500);
+	m_fds_data = std::make_unique<uint8_t[]>(m_fds_sides * 65500);
 
 	// if there is an header, skip it
 	image.fseek(header, SEEK_SET);
 	image.fread(m_fds_data.get(), 65500 * m_fds_sides);
+}
+
+// One Game Doctor side: blocks 1 to 4 without the gaps, each followed by a
+// dummy CRC or not, the same for the whole side. Copies every file on the
+// side, including any after the count in block 2. Returns the bytes written.
+static uint32_t gamedoctor_side(const uint8_t *src, uint32_t len, uint8_t *dst, uint32_t dst_size)
+{
+	for (uint32_t const crc : { 0U, 2U })
+	{
+		uint32_t p = 0, out = 0;
+		auto take = [&] (uint32_t n)
+		{
+			if (p + n > len || out + n > dst_size)
+				return false;
+			std::copy_n(src + p, n, dst + out);
+			p += n + crc;
+			out += n;
+			return true;
+		};
+
+		if (!take(56) || p >= len || src[p] != 0x02 || !take(2))
+			continue;
+		if (p < len && src[p] != 0x03)
+			continue;
+		while (p < len && src[p] == 0x03)
+		{
+			if (!take(16))
+				break;
+			uint32_t const size = dst[out - 3] | (dst[out - 2] << 8);
+			if (p >= len || src[p] != 0x04 || !take(1 + size))
+				break;
+		}
+		return out;
+	}
+	return 0;
+}
+
+// A Game Doctor image: one or more sides, each a 3-byte header followed by
+// the side's blocks. A side is laid out in 72KB, as without gaps and CRCs a
+// side can hold more than the 65500 bytes of an .fds side.
+void nes_disksys_device::load_gamedoctor(const uint8_t *data, uint64_t length)
+{
+	static constexpr uint8_t DIB[15] = { 0x01, '*', 'N', 'I', 'N', 'T', 'E', 'N', 'D', 'O', '-', 'H', 'V', 'C', '*' };
+
+	std::vector<std::pair<uint64_t, uint64_t> > sides;
+	uint64_t pos = 0;
+	while (pos + 3 + 56 <= length && !memcmp(data + pos + 3, DIB, sizeof(DIB)))
+	{
+		uint8_t const *const next = std::search(data + pos + 3 + 56, data + length, std::begin(DIB), std::end(DIB));
+		uint64_t const end = (next - data >= 3 && next < data + length) ? uint64_t(next - data) - 3 : length;
+		sides.emplace_back(pos + 3, end);
+		pos = end;
+	}
+
+	m_fds_side_size = 0x12000;
+	m_fds_sides = sides.size();
+	m_fds_data = make_unique_clear<uint8_t[]>(m_fds_sides * m_fds_side_size);
+	for (int s = 0; s < m_fds_sides; s++)
+		gamedoctor_side(data + sides[s].first, sides[s].second - sides[s].first, &m_fds_data[s * m_fds_side_size], m_fds_side_size);
 }
 
 void nes_disksys_device::unload_disk(device_image_interface &image)

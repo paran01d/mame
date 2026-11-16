@@ -52,6 +52,7 @@ private:
 	emu_timer *irq_timer;
 
 	void load_disk(device_image_interface &image);
+	void load_gamedoctor(const uint8_t *data, uint64_t length);
 	void unload_disk(device_image_interface &image);
 
 	uint16_t m_irq_count, m_irq_count_latch;
@@ -68,6 +69,7 @@ private:
 	uint8_t m_drive_ready;
 
 	uint8_t m_fds_sides;
+	uint32_t m_fds_side_size;   // bytes per side in m_fds_data
 	int32_t m_fds_last_side;
 	int32_t m_fds_count;
 };
