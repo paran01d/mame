@@ -1339,6 +1339,7 @@ void snes_console_state::machine_start()
 		{
 			m_maincpu->space(AS_PROGRAM).install_read_handler(0x002800, 0x0028ff, 0, 0xbf0000, 0, read8sm_delegate(*m_cartslot, FUNC(base_sns_cart_slot_device::chip_read)));
 			m_maincpu->space(AS_PROGRAM).install_write_handler(0x002800, 0x0028ff, 0, 0xbf0000, 0, write8sm_delegate(*m_cartslot, FUNC(base_sns_cart_slot_device::chip_write)));
+			m_cartslot->install_cart_io(m_maincpu->space(AS_PROGRAM));
 		}
 		// install memory access taps (send address pin to cartridge slot)
 		m_maincpu->space(AS_PROGRAM).install_readwrite_tap

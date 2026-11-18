@@ -227,6 +227,11 @@ void upd765_family_device::set_ready_line_connected(bool _ready)
 	ready_connected = _ready;
 }
 
+void upd765_family_device::set_ready_polled(bool _polled)
+{
+	ready_polled = _polled;
+}
+
 void upd765_family_device::set_select_lines_connected(bool _select)
 {
 	select_connected = _select;

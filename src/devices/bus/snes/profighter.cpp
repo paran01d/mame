@@ -5,8 +5,9 @@
 
  Super Pro Fighter Q (3 variants)
  Super Pro Fighter X (MB03D)
+ Double Pro Fighter (SNES side)
 
- TODO: Q, QA and X are stubs. QB is emulated.
+ TODO: Q, QA and X are stubs. QB and the Double Pro Fighter are emulated.
 
  Memory map (QB, Mode 0 / BIOS mode):
    $8000-$9FFF: DRAM page window (8KB, page selected by $E000-$E003)
@@ -38,6 +39,7 @@
 #include "snes_carts.h"
 
 #include "imagedev/floppy.h"
+#include "machine/ffelink.h"
 #include "machine/upd765.h"
 
 #include "softlist_dev.h"
@@ -50,6 +52,7 @@ DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_Q, sns_pro_fighter_q_device, "profighterq", "
 DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_QA, sns_pro_fighter_qa_device, "profighterqa", "Super Pro. Fighter Q (variant 2)");
 DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_QB, sns_pro_fighter_qb_device, "profighterqb", "Super Pro. Fighter Q (variant 3)");
 DEFINE_DEVICE_TYPE(SNS_PRO_FIGHTER_X, sns_pro_fighter_x_device, "profighterx", "Pro Fighter X (MB03D)");
+DEFINE_DEVICE_TYPE(SNS_DOUBLE_PRO_FIGHTER, sns_double_pro_fighter_device, "dblprofighter", "Double Pro. Fighter (SNES)");
 
 
 static void profght_floppies(device_slot_interface &device)
@@ -195,19 +198,24 @@ D43256AGU-15LL CMOS Static RAM
 */
 
 sns_pro_fighter_qb_device::sns_pro_fighter_qb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: device_t(mconfig, SNS_PRO_FIGHTER_QB, tag, owner, clock)
+	: sns_pro_fighter_qb_device(mconfig, SNS_PRO_FIGHTER_QB, tag, owner, clock)
+{
+}
+
+sns_pro_fighter_qb_device::sns_pro_fighter_qb_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, type, tag, owner, clock)
 	, device_sns_cart_interface(mconfig, *this)
 	, m_program_rom(*this, "program")
 	, m_fdc(*this, "fdc")
+	, m_dram_mode(false)
+	, m_fdc_irq(false)
 	, m_iccard(*this, "cartslot")
 	, m_dram_size_port(*this, "DRAM_SIZE")
 	, m_dram_size(DRAM_MAX)
-	, m_dram_mode(false)
 	, m_cart_passthrough(false)
 	, m_cart_enable(false)
 	, m_hirom(false)
 	, m_dram_page(0)
-	, m_fdc_irq(false)
 {
 }
 
@@ -570,6 +578,146 @@ void sns_pro_fighter_qb_device::device_add_mconfig(machine_config &config)
 	SOFTWARE_LIST(config, "flop_list").set_original("snes_profighter_flop");
 
 	SNS_CART_SLOT(config, m_iccard, snes_cart, nullptr);
+}
+
+
+/*
+Double Pro Fighter (SNES side)
+
+Older SNES + Mega Drive version of the Pro Fighter Q, with up to 32 Mbit of
+DRAM. The SNES side has the same $E000-$E00F mode, page and window decode as
+the QB (the QB diagnostic ROM runs on it), and its BIOS keeps the 8KB page
+counter in 16 bits, so 32 Mbit loads, saves and cart copies work.
+
+One 27512 holds both BIOSes:
+  $0000-$3FFF  Mega Drive BIOS (bus/megadrive/profighter.cpp), repeated at $4000
+  $8000-$BFFF  SNES BIOS low half, at $4400-$5FFF of banks $00-$3F in Mode 0
+               (bank bit 0 selects $8000-$9FFF or $A000-$BFFF)
+  $C000-$FFFF  SNES BIOS high half, at $C000-$FFFF in Mode 0
+
+$2800-$28FF registers (mirrored every 16 bytes):
+  $2800 R: bit 7 = FDC INT
+  $2801 R: bit 7 = disk changed (DIR)
+  $2802 W: FDC DOR
+  $2803 R: bit 7 = PC link busy (machine/ffelink.cpp)
+  $2804 RW: FDC data              $2805 R: FDC main status
+  $2807 W: FDC CCR
+  $2808 R: PC link byte           W: nibble to the PC
+  $2809 W: PC link acknowledge
+
+The BIOS moves sector data by polling the FDC (SPECIFY ND=1) into WRAM, not
+by DMA.
+
+TODO: $2800 writes ($80/$00 at game start), $E008-$E00B and $E800-$E8FF
+(written at game start) are not known.
+*/
+
+sns_double_pro_fighter_device::sns_double_pro_fighter_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: sns_pro_fighter_qb_device(mconfig, SNS_DOUBLE_PRO_FIGHTER, tag, owner, clock)
+	, m_link(*this, "link")
+{
+}
+
+ROM_START( dblprofighter )
+	ROM_REGION( 0x10000, "program", 0 )
+	ROM_LOAD( "dpf_bios.bin", 0x0000, 0x10000, CRC(bae38801) SHA1(d9677fe8df2f33871409ce933df0492bfc67971e) )
+ROM_END
+
+const tiny_rom_entry *sns_double_pro_fighter_device::device_rom_region() const
+{
+	return ROM_NAME( dblprofighter );
+}
+
+void sns_double_pro_fighter_device::device_start()
+{
+	sns_pro_fighter_qb_device::device_start();
+}
+
+void sns_double_pro_fighter_device::device_add_mconfig(machine_config &config)
+{
+	sns_pro_fighter_qb_device::device_add_mconfig(config);
+
+	// TODO: the controller's part number; the BIOS uses only registers the
+	// QB's 3201 has too
+	N82077AA(config.replace(), m_fdc, 24_MHz_XTAL);
+	m_fdc->set_ready_polled(false);
+	m_fdc->intrq_wr_callback().set([this] (int state) { fdc_irq_w(state); });
+	FLOPPY_CONNECTOR(config, "fdc:1", profghtqb_floppies, "35hd", floppy_image_device::default_pc_floppy_formats).enable_sound(true);
+
+	FFE_LINK(config, m_link);
+}
+
+// $4400-$5FFF of banks $00-$3F (and $80-$BF): 8KB of the BIOS low half in
+// Mode 0, chosen by bank bit 0 (code at $00:5000, font at $01:5000)
+template <unsigned Half>
+uint8_t sns_double_pro_fighter_device::bios_low_r(offs_t offset)
+{
+	if (m_dram_mode)
+		return read_open_bus();
+	return m_program_rom->base()[0x8000 | (Half << 13) | ((0x4400 + offset) & 0x1fff)];
+}
+
+void sns_double_pro_fighter_device::install_io(address_space &space)
+{
+	space.install_read_handler(0x004400, 0x005fff, 0, 0xbe0000, 0, emu::rw_delegate(*this, FUNC(sns_double_pro_fighter_device::bios_low_r<0>)));
+	space.install_read_handler(0x014400, 0x015fff, 0, 0xbe0000, 0, emu::rw_delegate(*this, FUNC(sns_double_pro_fighter_device::bios_low_r<1>)));
+}
+
+uint8_t sns_double_pro_fighter_device::firmware_r(uint16_t addr) const
+{
+	return m_program_rom->base()[0xc000 | (addr & 0x3fff)];
+}
+
+uint8_t sns_double_pro_fighter_device::chip_read(offs_t offset)
+{
+	const uint16_t addr = offset & 0xffff;
+
+	if (addr <= 0xff)
+	{
+		switch (addr & 0x0f)
+		{
+		case 0: return m_fdc_irq ? 0x80 : 0x00;
+		case 1: return m_fdc->dir_r() & 0x80;
+		case 3: return m_link->busy_r() ? 0x80 : 0x00;
+		case 4: return m_fdc->fifo_r();
+		case 5: return m_fdc->msr_r();
+		case 8: return m_link->data_r();
+		default: return 0xff;
+		}
+	}
+
+	return 0xff;
+}
+
+void sns_double_pro_fighter_device::chip_write(offs_t offset, uint8_t data)
+{
+	const uint16_t addr = offset & 0xffff;
+
+	if (addr <= 0xff)
+	{
+		switch (addr & 0x0f)
+		{
+		case 0: LOG("$2800 = %02X\n", data); break;
+		case 2: m_fdc->dor_w(data); break;
+		case 4: m_fdc->fifo_w(data); break;
+		case 7: m_fdc->ccr_w(data); break;
+		case 8: m_link->nibble_w(data); break;
+		case 9: m_link->ack_w(); break;
+		default: break;
+		}
+		return;
+	}
+
+	if (addr < 0x8000)
+		return;
+
+	if ((addr & 0xff00) == 0xe800)
+	{
+		LOG("$%04X = %02X\n", addr, data);
+		return;
+	}
+
+	sns_pro_fighter_qb_device::chip_write(offset, data);
 }
 
 

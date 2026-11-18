@@ -56,6 +56,7 @@ public:
 	void set_rate(int rate); // rate in bps, to be used when the FDC is externally frequency-controlled
 
 	void set_ready_line_connected(bool ready);
+	void set_ready_polled(bool polled);
 	void set_select_lines_connected(bool select);
 	void set_ts_line_connected(bool ts);
 	void set_floppy(floppy_image_device *image);

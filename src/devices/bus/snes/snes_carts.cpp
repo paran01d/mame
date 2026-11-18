@@ -74,4 +74,5 @@ void snes_cart(device_slot_interface &device)
 	device.option_add("profighterqa", SNS_PRO_FIGHTER_QA);
 	device.option_add("profighterqb", SNS_PRO_FIGHTER_QB);
 	device.option_add("profighterx",  SNS_PRO_FIGHTER_X);
+	device.option_add("dblprofighter", SNS_DOUBLE_PRO_FIGHTER);
 }
